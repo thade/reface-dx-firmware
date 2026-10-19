@@ -32,7 +32,7 @@ reface_csdx_fw/
   updater/                         (git-ignored) the zip, orig/, stock/ and noclock/ app copies
 ```
 
-Hardware test procedure: see [CHECKLIST.md](CHECKLIST.md).
+Hardware test procedure: see [CHECKLIST.md](CHECKLIST.md). Narrative summary of findings: [WRITEUP.md](WRITEUP.md).
 
 Python deps: capstone (`python3 -m venv venv && venv/bin/pip install capstone`),
 only needed by `find_realtime.py`.

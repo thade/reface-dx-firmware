@@ -17,7 +17,7 @@ bytes + number of groups (i.e. packed bytes before padding to a full group).
 
 Usage:
     refacefw.py extract  <updater.dat|.mid>  <image.bin>
-    refacefw.py repack   <image.bin>  <out.mid>  [--template <original.mid>]
+    refacefw.py repack   <image.bin>  <out.mid>
     refacefw.py roundtrip <original.mid>          (extract, repack, compare)
 """
 import sys, struct
@@ -47,34 +47,55 @@ def _varlen(v):
     return bytes(reversed(out))
 
 def parse_smf(d):
-    """Return list of (delta, body) for every F0 SysEx event. body excludes F0."""
-    assert d[:4] == b"MThd"
+    """Return list of (delta, body) for every SysEx message. body excludes F0.
+
+    A message split across an F0 event and following F7 continuation events
+    (the SMF way of chunking long SysEx) is reassembled into one body.
+    """
+    assert d[:4] == b"MThd", "not a Standard MIDI File"
+    ntracks = struct.unpack(">H", d[10:12])[0]
+    assert ntracks == 1, "expected a single-track (format 0) file, got %d tracks" % ntracks
     p = 14
     assert d[p:p + 4] == b"MTrk"
     tl = struct.unpack(">I", d[p + 4:p + 8])[0]; p += 8; end = p + tl
-    msgs = []; running = None
+    msgs = []; running = None; open_sysex = False
     while p < end:
         dt, p = _varlen_read(d, p)
         st = d[p]
-        if st in (0xF0, 0xF7):
+        if st == 0xF0:
             p += 1; ln, p = _varlen_read(d, p)
-            if st == 0xF0:
-                msgs.append((dt, d[p:p + ln]))
-            p += ln
+            body = d[p:p + ln]; p += ln
+            msgs.append((dt, bytearray(body)))
+            open_sysex = body[-1:] != b"\xf7"
+        elif st == 0xF7:
+            p += 1; ln, p = _varlen_read(d, p)
+            body = d[p:p + ln]; p += ln
+            if open_sysex:                      # continuation of the previous F0 event
+                msgs[-1][1].extend(body)
+                open_sysex = body[-1:] != b"\xf7"
+            # otherwise an "escape" event (raw bytes); not SysEx, ignore
         elif st == 0xFF:
             p += 2; ln, p = _varlen_read(d, p); p += ln
         else:
             if st & 0x80:
                 running = st; p += 1
-            p += 1 if (running >> 4) in (0xC, 0xD) else 2
-    return msgs
+            if running is None:
+                raise ValueError("data byte at %#x with no running status" % p)
+            hi = running >> 4
+            if hi in (0xC, 0xD):
+                p += 1
+            elif hi == 0xF:                     # system common: F1,F3 = 1 data byte, F2 = 2, F6 = 0
+                p += {0xF1: 1, 0xF2: 2, 0xF3: 1}.get(running, 0)
+            else:
+                p += 2
+    return [(dt, bytes(b)) for dt, b in msgs]
 
 # ------------------------------------------------------------- SysEx helpers
 def yamaha_checksum(addr_and_data):
     return (-sum(addr_and_data)) & 0x7F
 
 def split_msg(body):
-    """body = bytes after F0 up to and including F7. Returns (count, data) and verifies."""
+    """body = bytes after F0 up to and including F7. Verifies framing and checksum, returns data."""
     assert body[:4] == YAMAHA_HDR, body[:8].hex()
     cnt = (body[4] << 7) | body[5]
     assert body[6:9] == ADDRESS

@@ -11,7 +11,7 @@ import sys, struct, collections
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB, CS_MODE_BIG_ENDIAN
 
 BASE = 0x02020000
-CODE_END = 0x80000
+CODE_END = 0x140000
 NAMES = {0xF8: "clock", 0xFA: "start", 0xFB: "continue", 0xFC: "stop", 0xFE: "active-sense"}
 
 def hw(d, off):
@@ -27,30 +27,35 @@ def bl_target(d, off):
         return BASE + off + 4 + imm
     return None
 
-def all_bl_sites(d):
-    sites = []
-    for off in range(0, CODE_END, 2):
-        t = bl_target(d, off)
-        if t is not None and BASE <= t < BASE + CODE_END:
-            sites.append((off, t))
-    return sites
+def sweep(d, imms):
+    """One linear pass over the code region.
 
-def imm_sites(d, imm):
-    out = []
-    for off in range(0, CODE_END, 2):
+    Returns (bl_sites, imm_sites): bl_sites = [(off, target)], imm_sites =
+    {imm: [(off, reg)]} for every `movs rX, #imm` with imm in imms.
+    """
+    bl_sites = []; imm_sites = {i: [] for i in imms}
+    n = min(CODE_END, len(d) - 2)
+    for off in range(0, n, 2):
         h = hw(d, off)
-        if (h & 0xF8FF) == (0x2000 | imm):          # movs rX, #imm
-            out.append((off, (h >> 8) & 7))
-    return out
+        if (h & 0xF800) == 0xF000:
+            t = bl_target(d, off)
+            if t is not None and BASE <= t < BASE + CODE_END:
+                bl_sites.append((off, t))
+        elif (h & 0xF800) == 0x2000 and (h & 0xFF) in imm_sites:
+            imm_sites[h & 0xFF].append((off, (h >> 8) & 7))
+    return bl_sites, imm_sites
+
+def is_function_end(h):
+    """Thumb-1 halfword that ends straight-line flow: bx, pop, unconditional b."""
+    return (h & 0xFF80) == 0x4700 or (h & 0xFE00) == 0xBC00 or (h & 0xF800) == 0xE000
 
 def next_bl(d, off, window=24):
-    """Address of first BL within `window` bytes after off; also whether a BX/POP intervenes."""
+    """Target of the first BL within `window` bytes after off, or None if flow ends first."""
     for o in range(off + 2, off + window, 2):
         t = bl_target(d, o)
         if t is not None:
             return t, o
-        h = hw(d, o)
-        if h == 0x4770 or (h & 0xFF00) == 0xBD00:      # bx lr / pop {..pc}
+        if is_function_end(hw(d, o)):
             return None, o
     return None, None
 
@@ -61,6 +66,8 @@ def disasm(d, off, length=0x60, mark=()):
         print("  %08x  %-6s %s%s" % (i.address, i.mnemonic, i.op_str, m))
 
 def main(argv):
+    if len(argv) < 2:
+        print(__doc__); return 2
     d = open(argv[1], "rb").read()
     if "--dis" in argv:
         a = argv[argv.index("--dis") + 1]
@@ -68,7 +75,7 @@ def main(argv):
         addr = int(addr, 16); ln = int(ln, 16) if ln else 0x80
         disasm(d, addr - BASE if addr >= BASE else addr, ln)
         return 0
-    bl_sites = all_bl_sites(d)
+    bl_sites, imm_sites = sweep(d, NAMES)
     callers = collections.defaultdict(list)
     for off, t in bl_sites:
         callers[t].append(off)
@@ -79,12 +86,8 @@ def main(argv):
             print("  bl at %08x (file %#x)" % (BASE + off, off))
         return 0
     per_imm = {}
-    for imm, name in NAMES.items():
-        rows = []
-        for off, reg in imm_sites(d, imm):
-            t, at = next_bl(d, off)
-            rows.append((off, reg, t))
-        per_imm[imm] = rows
+    for imm in NAMES:
+        per_imm[imm] = [(off, reg, next_bl(d, off)[0]) for off, reg in imm_sites[imm]]
     tally = collections.defaultdict(lambda: collections.defaultdict(list))
     for imm, rows in per_imm.items():
         for off, reg, t in rows:
