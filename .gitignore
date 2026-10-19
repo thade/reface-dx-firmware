@@ -1,0 +1,6 @@
+# Yamaha firmware blobs: copyrighted, reproducible from the official updater
+reface_csdx_fw/out/
+*.pkl
+venv/
+__pycache__/
+.DS_Store
