@@ -273,7 +273,7 @@ Refresh after a toggle: `0x0204479C` → draws `[M/S+0x14]+0xC` (static) and
 | helper | args | what it draws |
 |---|---|---|
 | 0x0203C86C | (x, y, page) | page title icon 32×32: table base 0x020A494C, bitmap = [base+0x24+4·page]; titles 0–4 in use (2 = MIDI page icon) |
-| 0x0203C254 | (list) | label list: 16-byte records `{s16 x, y, w, h; be32 bmp}`; terminator = record with byte[8]==0xFF |
+| 0x0203C254 | (list) | label list: 16-byte records `{s16 x, y, w, h; be32 zero; be32 bmp}` (bitmap read from +0xC); terminator = record with byte[8]==0xFF |
 | 0x0203C434 | (x, y, v) | on/off switch 32×32 at y=0x26: v==0 → "OFF" (0x020B08A8), v≠0 → "ON" (0x020B0840) |
 | 0x0203C8E4 | (x, y, byte) | numeric value box (channel digits) |
 | 0x02045B30 | (lamp_id, sel) | panel lamp / key-guide strip (8 guide ids 03–0A, ROM struct 0x020C3C44) |
@@ -324,7 +324,7 @@ clock trampoline.  All functions are assembled by a small big-endian
 Thumb-1 assembler in the script (push/pop, movs, ldr-literal, ldrb, cmp,
 b±cond, bl, bx) and verified by disassembly.
 
-In-place patches (3 sites, 12 bytes):
+In-place patches (3 sites: 8-byte descriptor, 2-byte cmp, 4-byte bl):
 
 | file offset | stock | patched | effect |
 |---|---|---|---|

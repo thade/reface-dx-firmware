@@ -20,7 +20,7 @@ hardware.
 - **Menu switch (v2): built, not yet flashed.** A second patch
   (`tools/patch_clock_menu.py`) adds a sixth FUNCTION page, "MIDI 2", with a
   CLOCK on/off item stored at reserved settings address 0x15; only three
-  bytes of stock code change. Verified by emulation; see MENU_RE.md.
+  sites of stock code change (descriptor, one `cmp`, one `bl`). Verified by emulation; see MENU_RE.md.
 - **CP firmware on a DX: no.** Different Yamaha chip (SWX08 vs SSP2),
   different board, and the CP needs a 64 MB sample ROM the DX does not have.
   The only physically possible swap is CS firmware on a DX, and that is the

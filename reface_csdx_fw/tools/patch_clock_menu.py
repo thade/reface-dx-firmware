@@ -217,8 +217,11 @@ def patch(img):
     # 1. CLOCK label bitmap + label list ------------------------------------
     bmp  = make_clock_label()
     BMPA = alloc(bmp, 4, "clock label bitmap")
-    labellist = struct.pack(">hhhh", 0, 0x0C, 0x20, 0x34) + be32(BMPA | 0) \
+    # label record (16 bytes, as 0x0203C254 reads it): {s16 x, y, w, h;
+    # be32 zero (byte 8 == 0xFF marks the terminator); be32 bitmap at +0xC}
+    labellist = struct.pack(">hhhh", 0, 0x0C, 0x20, 0x34) + be32(0) + be32(BMPA) \
               + bytes([0,0,0,0, 0,0,0,0, 0xFF,0,0,0, 0,0,0,0])   # terminator
+    assert len(labellist) == 32
     LBLA = alloc(labellist, 4, "label list")
 
     # 2. layout: one switch row on param 0x15 + three empty columns ---------

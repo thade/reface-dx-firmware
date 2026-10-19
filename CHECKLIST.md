@@ -10,7 +10,7 @@ Two re-signed copies of Yamaha's updater live under `reface_csdx_fw/updater/`
 | `updater/clockmenu/reface updater.app` | MIDI 2 page patch (`tools/patch_clock_menu.py`) | the menu switch mod |
 | `updater/orig/.../reface updater.app` | untouched Yamaha app | recovery |
 
-Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `13e88c42…9c16`.
+Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `7f67dfd0…a6bf`.
 
 **Result: both phases passed on 2026-10-19. See Record at the bottom.**
 
@@ -52,7 +52,7 @@ Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `
 Built and emulation-verified, **not yet flashed**.  Read MENU_RE.md §8 for
 what the patch changes before running it.  The app is
 `updater/clockmenu/reface updater.app` (payload SHA-256
-`13e88c42…9c16`).
+`7f67dfd0…a6bf`).
 
 1. Same Update-mode entry (F#3 + A3 + C#4 at power-on), flash, expect the
    same display sequence and 3-ish minute transfer.
@@ -66,7 +66,11 @@ what the patch changes before running it.  The app is
 4. On MIDI 2: title should show the MIDI icon, one item labelled "CLOCK"
    with an OFF/ON switch graphic, value showing ON (default).
 5. Toggle it off: MIDI monitor should show F8 stop immediately (FE Active
-   Sensing continues).  Toggle on: F8 resumes.  If a MIDI monitor is not
+   Sensing continues).  Toggle on: F8 resumes.  Opening the page the first
+   time and each toggle go through the stock parameter setter, so the
+   monitor may also show a short Yamaha SysEx parameter change for system
+   address 0x15 (the same thing the MIDI page does for CONTROL / LOCAL);
+   that is expected, not a fault.  If a MIDI monitor is not
    handy, feed the DX external clock first so its own sender is idle, then
    check with a DAW.
 6. Leave FUNCTION mode, power-cycle, re-enter FUNCTION: the CLOCK setting

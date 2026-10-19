@@ -228,9 +228,10 @@ flag instead of removing it, giving a user-facing switch.
 `tools/patch_clock_menu.py` replaces the permanent removal with a
 user-facing setting: it adds a sixth FUNCTION page ("MIDI 2") holding one
 on/off item, CLOCK, stored at reserved settings address `0x15` and gated at
-the clock-sender call site via a small trampoline in free ROM.  Three bytes
-of stock code change (page-group descriptor 5→6 pages, quick-key range check
-`cmp #3`→`cmp #5`, and the `bl` at 0x020415C8 → trampoline); everything else
+the clock-sender call site via a small trampoline in free ROM.  Three sites
+of stock code change (page-group descriptor 5→6 pages with a new list pointer,
+quick-key range check `cmp #3`→`cmp #5`, and the `bl` at 0x020415C8 →
+trampoline); everything else
 is new code/data placed in the 0xFF fill from file 0x140000.  Semantics:
 0 = clock off, 1 = on, anything else (e.g. 0xFF from erased flash) = on,
 normalised to 1 the first time the page is opened — so out-of-the-box
