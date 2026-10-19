@@ -26,6 +26,8 @@ reface_csdx_fw/
   tools/find_realtime.py           locate MIDI real-time senders in the image (capstone, BE Thumb)
   tools/patch_clock.py             apply the no-clock patch and build a patched updater SMF
   tools/patch_clock_menu.py        add a FUNCTION "MIDI 2" page with a clock on/off switch
+  tools/selftest.py                rebuild all three payloads in memory, check pinned SHA-256 (stdlib only)
+  tools/verify_menu.py             emulate the MIDI 2 page code under unicorn (draws, trampoline, keys, page apply)
   out/reface_updater_CSDX_v130.mid the untouched payload from the official updater
   out/reface_csdx_main_v130.bin    decoded raw image (1,966,080 bytes)
   out/*_noclock.*                  patched image and patched updater payload
@@ -37,8 +39,10 @@ references/                        Yamaha manuals: Data List, Owner's, Reference
 
 Hardware test procedure: see [CHECKLIST.md](CHECKLIST.md). Narrative summary of findings: [WRITEUP.md](WRITEUP.md). FUNCTION menu / parameter system / LCD reverse-engineering notes: [MENU_RE.md](MENU_RE.md).
 
-Python deps: capstone (`python3 -m venv venv && venv/bin/pip install capstone`),
-only needed by `find_realtime.py`.
+Python deps: the extract/patch/selftest tools need only the standard library.
+`find_realtime.py` needs capstone and `verify_menu.py` needs unicorn (and uses
+capstone when present): `cd reface_csdx_fw && python3 -m venv venv &&
+venv/bin/pip install capstone unicorn`.
 
 `out/` and `updater/` are git-ignored: the files are Yamaha's copyrighted firmware and are
 reproducible from the official download. Regenerate with:
@@ -48,7 +52,11 @@ python3 tools/refacefw.py roundtrip "reface updater.dat"      # must print ROUND
 python3 tools/refacefw.py extract "reface updater.dat" out/reface_csdx_main_v130.bin
 python3 tools/patch_clock.py out/reface_csdx_main_v130.bin out/reface_csdx_main_v130_noclock.bin out/reface_updater_CSDX_v130_noclock.mid
 python3 tools/patch_clock_menu.py out/reface_csdx_main_v130.bin out/reface_csdx_main_v130_clockmenu.bin out/reface_updater_CSDX_v130_clockmenu.mid
+python3 tools/selftest.py                                       # all three payload hashes must print OK
+venv/bin/python tools/verify_menu.py                            # emulated behaviour checks, must print ALL OK
 ```
+
+`tools/make_updaters.sh` runs both checks before building the apps.
 
 ## Verified: the update file
 

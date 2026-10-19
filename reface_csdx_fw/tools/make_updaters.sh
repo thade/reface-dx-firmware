@@ -32,10 +32,13 @@ python3 -I tools/refacefw.py roundtrip "$ORIG_APP/Contents/Resources/reface upda
 python3 -I tools/refacefw.py extract  "$ORIG_APP/Contents/Resources/reface updater.dat" out/reface_csdx_main_v130.bin
 python3 -I tools/refacefw.py repack   out/reface_csdx_main_v130.bin out/reface_updater_CSDX_v130_stock_rebuilt.mid
 cmp out/reface_updater_CSDX_v130_stock_rebuilt.mid "$ORIG_APP/Contents/Resources/reface updater.dat"
+python3 -I tools/selftest.py out/reface_csdx_main_v130.bin        # pinned hashes of all three payloads
 python3 -I tools/patch_clock.py out/reface_csdx_main_v130.bin out/reface_csdx_main_v130_noclock.bin out/reface_updater_CSDX_v130_noclock.mid
-[ "$(sha out/reface_updater_CSDX_v130_noclock.mid)" = "$EXPECT_NOCLOCK" ] || { echo "patched payload hash mismatch: patch_clock.py output changed"; exit 1; }
 python3 -I tools/patch_clock_menu.py out/reface_csdx_main_v130.bin out/reface_csdx_main_v130_clockmenu.bin out/reface_updater_CSDX_v130_clockmenu.mid >/dev/null
-[ "$(sha out/reface_updater_CSDX_v130_clockmenu.mid)" = "$EXPECT_CLOCKMENU" ] || { echo "clockmenu payload hash mismatch: patch_clock_menu.py output changed"; exit 1; }
+[ "$(sha out/reface_updater_CSDX_v130_noclock.mid)" = "$EXPECT_NOCLOCK" ] || { echo "noclock payload on disk does not match selftest pin"; exit 1; }
+[ "$(sha out/reface_updater_CSDX_v130_clockmenu.mid)" = "$EXPECT_CLOCKMENU" ] || { echo "clockmenu payload on disk does not match selftest pin"; exit 1; }
+if [ -x venv/bin/python ]; then venv/bin/python -I tools/verify_menu.py out/reface_csdx_main_v130.bin >/dev/null || { echo "verify_menu.py failed"; exit 1; }
+else echo "note: reface_csdx_fw/venv missing, skipping verify_menu.py (python3 -m venv venv && venv/bin/pip install unicorn capstone)"; fi
 
 # 2. make the app copies
 for variant in stock noclock clockmenu; do

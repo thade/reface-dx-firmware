@@ -340,16 +340,29 @@ does for 0x0E/0x06.  Trampoline: `bx lr` when the flag is 0, else
 `push {lr}; bl 0x02041438; pop {r3}; bx r3` (r0 tick argument preserved —
 the caller never reads r0/r3 after the call).
 
-### Verification (all automated, unicorn + capstone)
+### Verification (automated: `tools/verify_menu.py`, unicorn; `tools/selftest.py`, hashes)
 
+`selftest.py` rebuilds the stock, no-clock and clockmenu payloads from the
+stock image and checks their pinned SHA-256 (stdlib only).  `verify_menu.py`
+emulates the patched image with stock routines as control cases:
+
+* static draw: title draw called with (0, 0, MIDI icon), label draw with our
+  list; control = stock MIDI page static draw 0x02047D68
+* label list: walked by the real 0x0203C254 — exactly one blit, bitmap ==
+  the CLOCK bitmap, rect x=0 y=0x0C 32×52, then the terminator stops it;
+  control = the stock MIDI list (3 blits, known bitmaps).  Negative control:
+  the pre-4e9eecb list (bitmap at +8, 0xFF at +20) is shown to blit from
+  address 0 and never terminate — that bug shipped in the first clockmenu
+  build and was never flashed.
 * trampoline: flag 0 → sender not executed; 1/2/0xFF → executed; r0 preserved
 * value draw: flag 0 → OFF icon arg; 1/0xFF → ON icon arg
 * key handler ev3: setter called with (0x00000015, 1, toggle); id 0x12 ignored
 * key handler ev1: `(0x00800005, 1, 5)` always; `(0x15, 1, 1)` first when the
   stored flag is invalid
-* page-apply 0x020448CC with the patched (RAM-copied) descriptor and
-  M[4]=5: lands on our record and enters our key handler
-* boot-copy math: patched descriptor lands at exactly RAM 0x04011084
+* page-apply 0x020448CC after a simulated boot copy, M[4]=5: M[0x14] lands
+  on our record (key handler == ours) and the event dispatcher runs; page 2
+  still reaches the stock MIDI record; control = stock image, page 2
+* boot copy: patched descriptor lands at RAM 0x04011084 as {6, new list}
 
 ### Known limitations / open questions
 
