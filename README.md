@@ -28,12 +28,16 @@ reface_csdx_fw/
   out/reface_updater_CSDX_v130.mid the untouched payload from the official updater
   out/reface_csdx_main_v130.bin    decoded raw image (1,966,080 bytes)
   out/*_noclock.*                  patched image and patched updater payload
+  tools/make_updaters.sh           build re-signed stock and no-clock copies of Yamaha's updater app
+  updater/                         (git-ignored) the zip, orig/, stock/ and noclock/ app copies
 ```
+
+Hardware test procedure: see [CHECKLIST.md](CHECKLIST.md).
 
 Python deps: capstone (`python3 -m venv venv && venv/bin/pip install capstone`),
 only needed by `find_realtime.py`.
 
-`out/` is git-ignored: the files are Yamaha's copyrighted firmware and are
+`out/` and `updater/` are git-ignored: the files are Yamaha's copyrighted firmware and are
 reproducible from the official download. Regenerate with:
 
 ```bash

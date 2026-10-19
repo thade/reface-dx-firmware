@@ -4,3 +4,6 @@ reface_csdx_fw/out/
 venv/
 __pycache__/
 .DS_Store
+
+# Yamaha updater app copies (built by tools/make_updaters.sh)
+reface_csdx_fw/updater/
