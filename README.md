@@ -25,14 +25,17 @@ reface_csdx_fw/
   tools/refacefw.py                extract / repack / roundtrip the updater SMF (byte-identical)
   tools/find_realtime.py           locate MIDI real-time senders in the image (capstone, BE Thumb)
   tools/patch_clock.py             apply the no-clock patch and build a patched updater SMF
+  tools/patch_clock_menu.py        add a FUNCTION "MIDI 2" page with a clock on/off switch
   out/reface_updater_CSDX_v130.mid the untouched payload from the official updater
   out/reface_csdx_main_v130.bin    decoded raw image (1,966,080 bytes)
   out/*_noclock.*                  patched image and patched updater payload
-  tools/make_updaters.sh           build re-signed stock and no-clock copies of Yamaha's updater app
-  updater/                         (git-ignored) the zip, orig/, stock/ and noclock/ app copies
+  out/*_clockmenu.*                MIDI 2 page image and updater payload
+  tools/make_updaters.sh           build re-signed stock / no-clock / clock-menu updater apps
+  updater/                         (git-ignored) the zip, orig/, stock/, noclock/, clockmenu/ app copies
+references/                        Yamaha manuals: Data List, Owner's, Reference, v1.30 Supplementary
 ```
 
-Hardware test procedure: see [CHECKLIST.md](CHECKLIST.md). Narrative summary of findings: [WRITEUP.md](WRITEUP.md).
+Hardware test procedure: see [CHECKLIST.md](CHECKLIST.md). Narrative summary of findings: [WRITEUP.md](WRITEUP.md). FUNCTION menu / parameter system / LCD reverse-engineering notes: [MENU_RE.md](MENU_RE.md).
 
 Python deps: capstone (`python3 -m venv venv && venv/bin/pip install capstone`),
 only needed by `find_realtime.py`.
@@ -44,6 +47,7 @@ reproducible from the official download. Regenerate with:
 python3 tools/refacefw.py roundtrip "reface updater.dat"      # must print ROUNDTRIP OK
 python3 tools/refacefw.py extract "reface updater.dat" out/reface_csdx_main_v130.bin
 python3 tools/patch_clock.py out/reface_csdx_main_v130.bin out/reface_csdx_main_v130_noclock.bin out/reface_updater_CSDX_v130_noclock.mid
+python3 tools/patch_clock_menu.py out/reface_csdx_main_v130.bin out/reface_csdx_main_v130_clockmenu.bin out/reface_updater_CSDX_v130_clockmenu.mid
 ```
 
 ## Verified: the update file
@@ -219,6 +223,27 @@ the rebuilt SMF differs from Yamaha's in 6 bytes (packed data + checksum).
 A later version could gate the `bl` on the existing "MIDI control" system
 flag instead of removing it, giving a user-facing switch.
 
+## The MIDI 2 page patch (v2): a real menu switch
+
+`tools/patch_clock_menu.py` replaces the permanent removal with a
+user-facing setting: it adds a sixth FUNCTION page ("MIDI 2") holding one
+on/off item, CLOCK, stored at reserved settings address `0x15` and gated at
+the clock-sender call site via a small trampoline in free ROM.  Three bytes
+of stock code change (page-group descriptor 5→6 pages, quick-key range check
+`cmp #3`→`cmp #5`, and the `bl` at 0x020415C8 → trampoline); everything else
+is new code/data placed in the 0xFF fill from file 0x140000.  Semantics:
+0 = clock off, 1 = on, anything else (e.g. 0xFF from erased flash) = on,
+normalised to 1 the first time the page is opened — so out-of-the-box
+behaviour matches stock until the user turns it off.
+
+The full mechanism (page records, group descriptor, layouts, LCD bitmap
+formats, event routing) is documented in [MENU_RE.md](MENU_RE.md); the
+patch's new code was verified instruction-by-instruction with capstone and
+behaviorally with unicorn emulation (page-apply lands on the new record,
+the toggle drives the parameter setter, the trampoline gates the sender and
+preserves its argument).  Not yet flashed on hardware — see CHECKLIST.md
+Phase 3.
+
 
 ## Reported (not verified here)
 
@@ -245,11 +270,11 @@ flag instead of removing it, giving a user-facing switch.
 
 ## Plan
 
-1. Checksum probe on hardware (Unknown 1): flash stock-rebuilt SMF first,
-   then the patched one. Update mode is reached from the keyboard before the
-   main image runs, so stock can always be re-flashed.
-2. Verify with a MIDI monitor on USB and DIN: no 0xF8, Start/Stop still sent.
-3. Optional: gate on "MIDI control" instead of NOP, for a menu switch.
+1. ~~Checksum probe on hardware (Unknown 1)~~ done 2026-10-19: no image-level check.
+2. ~~Verify no 0xF8, Start/Stop still sent~~ done 2026-10-19 (USB).
+3. ~~Menu switch instead of permanent removal~~ implemented (MIDI 2 page,
+   `tools/patch_clock_menu.py`); hardware test pending — CHECKLIST Phase 3.
+4. Optional: confirm DIN MIDI OUT matches USB on any variant.
 
 ## Sources
 

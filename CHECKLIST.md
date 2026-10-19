@@ -6,10 +6,11 @@ Two re-signed copies of Yamaha's updater live under `reface_csdx_fw/updater/`
 | app | payload | purpose |
 |---|---|---|
 | `updater/stock/reface updater.app` | byte-identical to Yamaha's v1.30 | proves the re-signed app + our repacked SMF path flashes cleanly |
-| `updater/noclock/reface updater.app` | 4-byte patch at 0x0204145E | the actual mod |
+| `updater/noclock/reface updater.app` | 4-byte patch at 0x0204145E | the permanent no-clock mod |
+| `updater/clockmenu/reface updater.app` | MIDI 2 page patch (`tools/patch_clock_menu.py`) | the menu switch mod |
 | `updater/orig/.../reface updater.app` | untouched Yamaha app | recovery |
 
-Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`.
+Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `13e88c42…9c16`.
 
 **Result: both phases passed on 2026-10-19. See Record at the bottom.**
 
@@ -45,6 +46,37 @@ Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`.
    - DIN MIDI OUT: same checks if you have a DIN interface. The transmit wrapper feeds both ports, so DIN should match USB.
    - External clock in: feed clock from the DAW and confirm the Looper still follows it (receive path is untouched).
 4. Power-cycle and re-check once; settings and voices should persist.
+
+## Phase 3: MIDI 2 page (the menu switch)
+
+Built and emulation-verified, **not yet flashed**.  Read MENU_RE.md §8 for
+what the patch changes before running it.  The app is
+`updater/clockmenu/reface updater.app` (payload SHA-256
+`13e88c42…9c16`).
+
+1. Same Update-mode entry (F#3 + A3 + C#4 at power-on), flash, expect the
+   same display sequence and 3-ish minute transfer.
+2. First boot after flashing: the DX should behave exactly like stock
+   (clock still on — the default is "on" until you change it).
+3. FUNCTION menu: press FUNCTION repeatedly — the pages should now cycle
+   through six (Voice, Tuning, MIDI, System, Job, MIDI 2).  If cycling stops
+   at Job, try FUNCTION + keyboard keys hunting for the one that jumps to
+   MIDI 2 (quick-key id 0x17 — the exact key was not identified offline;
+   note which key worked in the Record below).
+4. On MIDI 2: title should show the MIDI icon, one item labelled "CLOCK"
+   with an OFF/ON switch graphic, value showing ON (default).
+5. Toggle it off: MIDI monitor should show F8 stop immediately (FE Active
+   Sensing continues).  Toggle on: F8 resumes.  If a MIDI monitor is not
+   handy, feed the DX external clock first so its own sender is idle, then
+   check with a DAW.
+6. Leave FUNCTION mode, power-cycle, re-enter FUNCTION: the CLOCK setting
+   and the clock behaviour should persist.  If it does not persist, that
+   means the settings flash save skips reserved bytes — record it; the
+   toggle still works per session.
+7. Regression pass: the other five pages draw and work as before; voice
+   edits, Looper Start/Stop, notes all normal.
+8. If anything misbehaves on the MIDI pages, reflash `updater/stock` or
+   `updater/orig` — the patch only changes three code bytes plus free ROM.
 
 ## Recovery
 

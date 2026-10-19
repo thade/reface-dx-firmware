@@ -10,6 +10,7 @@ ZIP=updater/reface_updater_CSDX_v130-3_mac.zip
 EXPECT_ZIP=291e5836af25d39e536ec2fd3d8cf82905edfce6d0d86692023656d9697889c2
 EXPECT_DAT=645309bef54e9444ebdeeacaa42f727b0fd0bdcfc06992ca1adde30a16112abb
 EXPECT_NOCLOCK=af1d24539c2f064c192a0d2bc86c06bbfefdcabc1486b5bcefe9379817ce4799
+EXPECT_CLOCKMENU=13e88c422918c3717795e608ca646887ef23720b0bfc1b6bc6ad6542e5bb9c16
 APP="reface updater.app"
 DAT="$APP/Contents/Resources/reface updater.dat"
 
@@ -32,14 +33,17 @@ python3 -I tools/refacefw.py repack   out/reface_csdx_main_v130.bin out/reface_u
 cmp out/reface_updater_CSDX_v130_stock_rebuilt.mid "$ORIG_APP/Contents/Resources/reface updater.dat"
 python3 -I tools/patch_clock.py out/reface_csdx_main_v130.bin out/reface_csdx_main_v130_noclock.bin out/reface_updater_CSDX_v130_noclock.mid
 [ "$(sha out/reface_updater_CSDX_v130_noclock.mid)" = "$EXPECT_NOCLOCK" ] || { echo "patched payload hash mismatch: patch_clock.py output changed"; exit 1; }
+python3 -I tools/patch_clock_menu.py out/reface_csdx_main_v130.bin out/reface_csdx_main_v130_clockmenu.bin out/reface_updater_CSDX_v130_clockmenu.mid >/dev/null
+[ "$(sha out/reface_updater_CSDX_v130_clockmenu.mid)" = "$EXPECT_CLOCKMENU" ] || { echo "clockmenu payload hash mismatch: patch_clock_menu.py output changed"; exit 1; }
 
-# 2. make the two app copies
-for variant in stock noclock; do
+# 2. make the app copies
+for variant in stock noclock clockmenu; do
   rm -rf "updater/$variant" && mkdir -p "updater/$variant"
   cp -R "$ORIG_APP" "updater/$variant/"
   case $variant in
-    stock)   cp out/reface_updater_CSDX_v130_stock_rebuilt.mid "updater/$variant/$DAT" ;;
-    noclock) cp out/reface_updater_CSDX_v130_noclock.mid       "updater/$variant/$DAT" ;;
+    stock)      cp out/reface_updater_CSDX_v130_stock_rebuilt.mid "updater/$variant/$DAT" ;;
+    noclock)    cp out/reface_updater_CSDX_v130_noclock.mid       "updater/$variant/$DAT" ;;
+    clockmenu)  cp out/reface_updater_CSDX_v130_clockmenu.mid     "updater/$variant/$DAT" ;;
   esac
   xattr -cr "updater/$variant/$APP"
   codesign --force --deep --sign - "updater/$variant/$APP"
@@ -50,3 +54,5 @@ echo
 echo "stock   payload must equal $EXPECT_DAT"
 echo "noclock payload differs from stock in 6 bytes:"
 cmp -l "updater/stock/$DAT" "updater/noclock/$DAT" || true
+echo "clockmenu payload adds the MIDI 2 page (new code in free ROM):"
+cmp -l "updater/stock/$DAT" "updater/clockmenu/$DAT" | wc -l

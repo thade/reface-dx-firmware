@@ -17,6 +17,10 @@ hardware.
   60-byte function with one caller, and the patch is a 4-byte NOP of its single
   transmit call. Flashed through Yamaha's own updater with the payload swapped:
   no 0xF8 on USB at all, Active Sensing, notes, Looper Start/Stop unchanged.
+- **Menu switch (v2): built, not yet flashed.** A second patch
+  (`tools/patch_clock_menu.py`) adds a sixth FUNCTION page, "MIDI 2", with a
+  CLOCK on/off item stored at reserved settings address 0x15; only three
+  bytes of stock code change. Verified by emulation; see MENU_RE.md.
 - **CP firmware on a DX: no.** Different Yamaha chip (SWX08 vs SSP2),
   different board, and the CP needs a 64 MB sample ROM the DX does not have.
   The only physically possible swap is CS firmware on a DX, and that is the
@@ -122,9 +126,10 @@ stock copy launches and logs that it loaded the replaced payload.
 
 ## Next
 
-Done on USB. Remaining optional items: confirm the DIN MIDI OUT is equally
-quiet (same transmit path, so expected), and a second version that gates the
-call on the "MIDI Control" flag for a menu switch.
+Done on USB. Remaining: flash the MIDI 2 menu-switch build (CHECKLIST Phase
+3) — which key selects page 6 and whether the setting survives power cycles
+are the two hardware questions. Optional afterwards: confirm the DIN MIDI
+OUT is equally quiet (same transmit path, so expected).
 
 ## Reported, not verified here
 
