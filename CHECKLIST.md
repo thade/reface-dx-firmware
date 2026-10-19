@@ -11,6 +11,8 @@ Two re-signed copies of Yamaha's updater live under `reface_csdx_fw/updater/`
 
 Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`.
 
+**Result: both phases passed on 2026-10-19. See Record at the bottom.**
+
 ## Before you start
 
 - [ ] reface DX on its AC adaptor, not USB power. Yamaha's guide insists on this.
@@ -53,5 +55,11 @@ Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`.
 
 Write the outcome of each phase here with the display text and MIDI monitor observations, then commit.
 
-- Phase 1 (stock rebuild): 
-- Phase 2 (no-clock): 
+- Phase 1 (stock rebuild), 2026-10-19: transfer 3:08 via re-signed `updater/stock` app.
+  DX display went LOADING / ERASING / WRITING / "Completed. 1.30 --> 1.30 Reboot."
+  Power-cycled; boots normally; 4 s listen: 192 x F8 (120 BPM), 20 x FE. Identical to pre-flash baseline.
+- Phase 2 (no-clock), 2026-10-19: first attempt was sent while the DX was in normal mode (ignored, harmless).
+  Second attempt with the DX in Update mode: transfer 3:08, same display sequence, "Completed. 1.30 --> 1.30 Reboot."
+  Power-cycled; boots normally. 8 s listen: 0 x F8, 41 x FE (200 ms). Notes received; Looper play sent FA,
+  Looper stop sent FC; no F8 at any point with the Looper running. Bootloader does not verify an image checksum
+  (or the trailer covers a region the patch does not touch). USB verified; DIN not yet checked.

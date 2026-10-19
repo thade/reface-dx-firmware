@@ -207,7 +207,7 @@ Start/Continue/Stop, Active Sensing, notes and everything else are
 untouched. The patched image differs from stock in exactly those 4 bytes;
 the rebuilt SMF differs from Yamaha's in 6 bytes (packed data + checksum).
 
-Not yet done on hardware. Flashing options:
+**Flashed and verified on hardware 2026-10-19**: the DX accepted the patched image (no image-level checksum is enforced), boots normally, sends no 0xF8 at all, and still sends Active Sensing, notes, Start and Stop. See CHECKLIST.md. Flashing options used/available:
 
 1. Copy `reface updater.app`, replace `Contents/Resources/reface updater.dat`
    with the patched `.mid`, and ad-hoc re-sign so macOS will launch it:
@@ -235,9 +235,8 @@ flag instead of removing it, giving a user-facing switch.
 
 ## Unknowns and risks
 
-1. Whether the bootloader checks the 8-byte trailer (or anything else) before
-   accepting an image. Cheapest test: resend the stock SMF with one harmless
-   byte changed and the SysEx checksum recomputed, and see if the unit boots.
+1. ~~Whether the bootloader checks the 8-byte trailer~~ Resolved: it accepted
+   the patched image, so there is no image-level check that the patch trips.
 2. Exact ARM core. Thumb-1 only was seen; treat as ARMv5T until proven otherwise.
 3. The 9-byte header message and the 8-byte trailer encoding.
 4. Recovery: Update mode is entered by key combination before the main image

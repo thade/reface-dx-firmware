@@ -12,11 +12,11 @@ hardware.
 
 ## Short answers
 
-- **Clock-off patch: realistic, and built.** The firmware is unencrypted,
-  uncompressed, big-endian ARM/Thumb. The clock sender is a 60-byte function
-  with one caller, and the patch is a 4-byte NOP of its single transmit call.
-  A patched updater package exists and the stock pipeline has been reproduced
-  byte for byte. It has not yet been flashed.
+- **Clock-off patch: done and verified on the DX (2026-10-19).** The firmware
+  is unencrypted, uncompressed, big-endian ARM/Thumb. The clock sender is a
+  60-byte function with one caller, and the patch is a 4-byte NOP of its single
+  transmit call. Flashed through Yamaha's own updater with the payload swapped:
+  no 0xF8 on USB at all, Active Sensing, notes, Looper Start/Stop unchanged.
 - **CP firmware on a DX: no.** Different Yamaha chip (SWX08 vs SSP2),
   different board, and the CP needs a 64 MB sample ROM the DX does not have.
   The only physically possible swap is CS firmware on a DX, and that is the
@@ -63,8 +63,9 @@ at power-on).
 - No encryption or compression. Source file paths for about 80 modules are
   compiled in, which made the MIDI code easy to locate.
 - Eight bytes after the build stamp look like a checksum but match no common
-  algorithm over any obvious range. Whether the bootloader checks them is the
-  single remaining unknown and only hardware answers it.
+  algorithm over any obvious range. The bootloader accepted the patched image
+  without complaint, so whatever they are, they are not enforced against this
+  patch.
 
 `tools/refacefw.py` extracts the image and rebuilds the SMF byte-identically
 from it (verified with `roundtrip`).
@@ -112,19 +113,18 @@ stock copy launches and logs that it loaded the replaced payload.
 
 ## Risks
 
-- Bootloader may verify the image trailer. Test order is therefore stock
-  rebuild first, then no-clock. Update mode is entered from the keyboard
-  before the main image runs, so a rejected or broken main image is
-  recoverable by reflashing Yamaha's untouched app.
+- Resolved: the bootloader accepted the patched image. Update mode is
+  entered from the keyboard before the main image runs, so a broken main
+  image remains recoverable by reflashing Yamaha's untouched app.
 - The patch is permanent for that firmware; a later version could gate the
   call on the existing "MIDI Control" flag to give a menu switch.
 - Exact ARM core is unconfirmed (treat as ARMv5T); irrelevant to this patch.
 
 ## Next
 
-`CHECKLIST.md` has the two-phase hardware procedure and what to observe on a
-MIDI monitor afterwards (no 0xF8 ever; 0xFE every 200 ms; FA/FC still on
-Looper play/stop).
+Done on USB. Remaining optional items: confirm the DIN MIDI OUT is equally
+quiet (same transmit path, so expected), and a second version that gates the
+call on the "MIDI Control" flag for a menu switch.
 
 ## Reported, not verified here
 
