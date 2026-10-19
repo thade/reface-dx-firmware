@@ -165,7 +165,7 @@ exactly four callers:
 
 | caller | byte | role |
 |---|---|---|
-| 0x0204140C area, fn 0x020403F4 | FA / FB | Start or Continue (chooses by 0x02041374 result) |
+| 0x02040400, 0x0204040C in fn 0x020403F4 | FB / FA | Start or Continue (chooses by 0x02041374 result) |
 | fn 0x02040418 | FC | Stop |
 | **0x0204145E**, fn 0x02041438 | **F8** | **Timing clock** |
 
