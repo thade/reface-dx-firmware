@@ -75,6 +75,15 @@ what the patch changes before running it.  The app is
    toggle still works per session.
 7. Regression pass: the other five pages draw and work as before; voice
    edits, Looper Start/Stop, notes all normal.
+   - Known deviation to confirm: select a POLY voice and open the Voice
+     page.  Stock leaves column 3 empty; the patched build is expected to
+     show Portamento Time there (page-0 layout frozen on the mono layout,
+     MENU_RE §8).  Check that a MONO voice shows the same four items as
+     stock and that editing still works in both modes.
+   - The quick-key range widening also routes key id 0x16 to the Job page
+     (stock never page-jumped on 0x16).  While hunting for the 0x17 key,
+     note any key that unexpectedly jumps to Job and whether that bothers
+     normal FUNCTION use.
 8. If anything misbehaves on the MIDI pages, reflash `updater/stock` or
    `updater/orig` — the patch only changes three code bytes plus free ROM.
 

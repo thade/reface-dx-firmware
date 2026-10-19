@@ -118,6 +118,7 @@ class Asm:
         for pos, rt, idx in self.poolrefs:
             paddr = pool_at + 4 * idx
             pc = (self.org + pos + 4) & ~3
+            assert (paddr - pc) % 4 == 0, "literal pool misaligned (org must be 4-aligned)"
             imm = (paddr - pc) // 4
             assert 0 <= imm <= 255, "literal out of range"
             self.buf[pos:pos+2] = be16(0x4800 | (rt << 8) | imm)
@@ -195,6 +196,10 @@ def patch(img):
     if off & 0x400000: off -= 0x800000
     assert BASE + CLOCK_BL + 4 + off == CLOCK_SEND, "clock BL mismatch"
     assert all(b == 0xFF for b in d[0x140000:0x140400]), "free ROM not empty"
+    # page 0's layout pointer is rewritten at FUNCTION entry (0x0204636C) into
+    # RAM 0x04011024 by Part Mode (Voice Common 0x0D); our relocated list is
+    # not touched by that write, so page 0 stays on the ROM (mono) layout.
+    # See MENU_RE.md §3.1 and CHECKLIST Phase 3.
     for r in range(5):                          # the five page records
         o = ROM_LIST + r * 20
         assert d[o] in (1, 2, 3, 4) and d[o+1:o+4] == b"\0\0\0"
@@ -292,7 +297,8 @@ def patch(img):
         return t.assemble()
 
     def reserve(blob_len, what=""):
-        while cur[0] % 2:
+        # code blobs end in a 4-aligned literal pool, so they must start 4-aligned
+        while cur[0] % 4:
             d[cur[0] - BASE] = 0x00; cur[0] += 1
         at = cur[0]; cur[0] += blob_len
         assert cur[0] <= FREE_END, "free ROM overflow"

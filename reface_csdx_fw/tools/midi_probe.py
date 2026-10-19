@@ -31,7 +31,7 @@ def main(argv):
                     counts["FE active sensing"] += 1
                 elif m.type in ("start", "continue", "stop"):
                     counts[m.type] += 1
-                elif m.type == "sysex" and list(m.data[:3]) == [0x7E, 0x7F, 0x06] or (m.type == "sysex" and m.data[:1] == (0x7E,)):
+                elif m.type == "sysex" and m.data[:1] == (0x7E,):      # universal (identity reply)
                     ident = bytes(m.data)
                 else:
                     others.append(m)

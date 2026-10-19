@@ -1,8 +1,9 @@
 #!/bin/bash
-# Build two copies of Yamaha's reface CS/DX updater app:
-#   updater/stock/reface updater.app    - payload rebuilt by refacefw.py (byte-identical to Yamaha's)
-#   updater/noclock/reface updater.app  - payload with the no-clock patch
-# Both are ad-hoc re-signed and de-quarantined so macOS will launch them.
+# Build three copies of Yamaha's reface CS/DX updater app:
+#   updater/stock/reface updater.app      - payload rebuilt by refacefw.py (byte-identical to Yamaha's)
+#   updater/noclock/reface updater.app    - payload with the no-clock patch
+#   updater/clockmenu/reface updater.app  - payload with the MIDI 2 page patch
+# All are ad-hoc re-signed and de-quarantined so macOS will launch them.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

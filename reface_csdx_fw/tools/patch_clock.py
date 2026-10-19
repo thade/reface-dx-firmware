@@ -33,7 +33,10 @@ def decode_bl(b):
     return imm
 
 def main(argv):
+    if len(argv) < 3:
+        print(__doc__); return 2
     img = bytearray(open(argv[1], "rb").read())
+    assert len(img) == 0x1E0000, "unexpected image size %d (wrong file?)" % len(img)
     off = BL_ADDR - BASE
     orig = bytes(img[off:off + 4])
     expect_ctx = bytes.fromhex("20f8")      # movs r0,#0xf8 just before
