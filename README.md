@@ -22,18 +22,24 @@ teardowns and forums and have not been checked on hardware.
 ```
 reface_csdx_fw/
   UpdaterGuide_en.pdf              Yamaha's official update procedure
-  tools/parse_smf.py               parse the updater SMF, list SysEx blocks, verify checksums
-  tools/extract.py                 unpack the 7-bit payload into a raw firmware image
+  tools/refacefw.py                extract / repack / roundtrip the updater SMF (byte-identical)
+  tools/find_realtime.py           locate MIDI real-time senders in the image (capstone, BE Thumb)
+  tools/patch_clock.py             apply the no-clock patch and build a patched updater SMF
   out/reface_updater_CSDX_v130.mid the untouched payload from the official updater
-  out/reface_csdx_main_v130.bin    decoded raw image (1,966,083 bytes)
+  out/reface_csdx_main_v130.bin    decoded raw image (1,966,080 bytes)
+  out/*_noclock.*                  patched image and patched updater payload
 ```
+
+Python deps: capstone (`python3 -m venv venv && venv/bin/pip install capstone`),
+only needed by `find_realtime.py`.
 
 `out/` is git-ignored: the files are Yamaha's copyrighted firmware and are
 reproducible from the official download. Regenerate with:
 
 ```bash
-python3 tools/parse_smf.py "reface updater.dat" msgs.pkl
-python3 tools/extract.py msgs.pkl out/reface_csdx_main_v130.bin
+python3 tools/refacefw.py roundtrip "reface updater.dat"      # must print ROUNDTRIP OK
+python3 tools/refacefw.py extract "reface updater.dat" out/reface_csdx_main_v130.bin
+python3 tools/patch_clock.py out/reface_csdx_main_v130.bin out/reface_csdx_main_v130_noclock.bin out/reface_updater_CSDX_v130_noclock.mid
 ```
 
 ## Verified: the update file
@@ -60,13 +66,17 @@ The app bundle `reface updater.app` contains one payload,
   standard Yamaha bulk one: `(-(sum(address + data))) & 0x7F`. All 139 verify.
 - Message 0 is a 9-byte header (`00 01 0A 00 00 10 08 00 00`, meaning not yet
   decoded). Messages 1..138 carry a 5-byte sub-header
-  `01 <blk hi> <blk lo> <len hi> <len lo>` then packed data. Blocks 1..137 carry
-  16368 packed bytes each; the last carries 4536 (length field says 4533, so the
-  last 3 are padding).
+  `01 <blk hi> <blk lo> <len hi> <len lo>` then packed data. Each block holds
+  14322 raw bytes (2046 groups of 7 = 16368 packed); the length field is
+  raw bytes + number of groups, i.e. packed bytes before padding to a whole
+  group. SMF deltas: 0 before the header message, 1309 ticks before every
+  block and before end-of-track. `refacefw.py roundtrip` rebuilds the
+  original file byte for byte.
 - 7-bit packing: groups of 8 bytes, first byte holds the MSBs, bit 6 belongs to
   the first of the following 7 data bytes, bit 0 to the last.
-- Decoded image: 1,966,083 bytes (0x1E0003). Everything from 0x140000 up is 0xFF
-  erase fill, so the live program is about 1.25 MB in a 2 MB flash region.
+- Decoded image: exactly 1,966,080 bytes (0x1E0000); the last packed group
+  carries 3 pad bytes. Everything from 0x140000 up is 0xFF erase fill, so the
+  live program is about 1.25 MB in a 2 MB flash region.
 - Not encrypted, not compressed. Code-region entropy is 6.3 to 7.0 bits/byte,
   strings and source paths are plaintext, no compression signatures found.
 - Build stamp at the end of the image: `REFACE      MAIN` then
@@ -145,12 +155,66 @@ MIDI real-time constant sites in the code region (Thumb `movs rX,#imm`):
 46 for 0xF8, 303 for 0xFE (most of the 0xFE ones are in one table-driven
 block 0x4B900..0x4E900 and are probably unrelated), 53 for 0xFA, 114 for 0xFC.
 
-Best lead so far: function at file offset 0x531C4 (address 0x020731C4).
-It allocates a 40-byte object, calls a probe, and fills bytes 2..5 with
-`FC FC 00 F8` on one path or `FE FC FE FC` on the other, then registers the
-object. Looks like per-port real-time message configuration. Start here, and
-also look for a timer callback that enqueues a single 0xF8 byte 24 times per
-beat into the `mdi_usb*` / `sio_if` transmit path.
+## Verified: the MIDI clock sender
+
+Found with `find_realtime.py`: the only function whose callers load each of
+0xF8, 0xFA, 0xFB and 0xFC into r0 immediately before the call is
+**0x02037C1C**, a 1-byte real-time transmit wrapper (it posts a type-9
+message with the byte to the MIDI output queue via 0x02037A34). It has
+exactly four callers:
+
+| caller | byte | role |
+|---|---|---|
+| 0x0204140C area, fn 0x020403F4 | FA / FB | Start or Continue (chooses by 0x02041374 result) |
+| fn 0x02040418 | FC | Stop |
+| **0x0204145E**, fn 0x02041438 | **F8** | **Timing clock** |
+
+The clock sender 0x02041438 (file 0x21438):
+
+```
+02041438  ldr  r3,[pc,#0x34]      ; &accumulator
+0204143a  ldr  r3,[r3]
+0204143c  push {r4,r5,r6,lr}
+0204143e  adds r6,r0,r3           ; acc += ticks passed in r0
+02041440  cmp  r6,#0x13
+02041442  bls  02041466           ; < 20: just store
+02041444  ...  r5 = acc / 20, r6 = acc % 20   (0x02089228 / 0x02089320 are div/mod helpers)
+02041456  movs r4,#0
+0204145a  movs r0,#0xf8
+0204145c  adds r4,#1
+0204145e  bl   02037c1c           ; <-- send one clock per 20 units
+02041462  cmp  r5,r4
+02041464  bhi  0204145a
+02041466  str  r6,[acc]
+```
+
+0x02041474 resets the accumulator (called with 0x14 right after Start so the
+first clock follows immediately). The single caller of the sender,
+0x020415B8, first calls getter 0x02040428 (`ldrb r0,[struct+8]`, a sync-mode
+byte) and only sends clock when it is 0, which matches the documented
+"follows external clock, resumes after 3 s" behaviour.
+
+## The patch
+
+`patch_clock.py` replaces the 4-byte `bl 0x02037C1C` at 0x0204145E
+(file offset 0x2145E, bytes `F7 F6 FB DD`) with two Thumb NOPs
+(`46 C0 46 C0`, `mov r8,r8`). Result: no Timing Clock is ever transmitted;
+Start/Continue/Stop, Active Sensing, notes and everything else are
+untouched. The patched image differs from stock in exactly those 4 bytes;
+the rebuilt SMF differs from Yamaha's in 6 bytes (packed data + checksum).
+
+Not yet done on hardware. Flashing options:
+
+1. Copy `reface updater.app`, replace `Contents/Resources/reface updater.dat`
+   with the patched `.mid`, and ad-hoc re-sign so macOS will launch it:
+   `codesign --force --deep --sign - "reface updater.app"`.
+2. Or send the SysEx messages yourself (e.g. python `mido`/`rtmidi`) with
+   the unit in Update mode, keeping the ~1309-tick (about 0.68 s at the SMF
+   tempo) gap between blocks that the updater uses.
+
+A later version could gate the `bl` on the existing "MIDI control" system
+flag instead of removing it, giving a user-facing switch.
+
 
 ## Reported (not verified here)
 
@@ -178,12 +242,11 @@ beat into the `mdi_usb*` / `sio_if` transmit path.
 
 ## Plan
 
-1. Build a repacker (inverse of `extract.py`): raw image -> 7-bit blocks ->
-   SysEx -> SMF, byte-identical to the original for an unmodified image.
-2. Checksum probe on hardware (Unknown 1).
-3. Locate the 0xF8 sender; minimal patch is NOP-ing the enqueue. Better patch
-   gates it on the existing "MIDI control" flag or a new menu item.
-4. Flash, verify with a MIDI monitor on both USB and DIN.
+1. Checksum probe on hardware (Unknown 1): flash stock-rebuilt SMF first,
+   then the patched one. Update mode is reached from the keyboard before the
+   main image runs, so stock can always be re-flashed.
+2. Verify with a MIDI monitor on USB and DIN: no 0xF8, Start/Stop still sent.
+3. Optional: gate on "MIDI control" instead of NOP, for a menu switch.
 
 ## Sources
 
