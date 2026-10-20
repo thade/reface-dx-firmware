@@ -11,6 +11,7 @@ const recipes = {};
 let index = null;
 let url = null;
 let made = null;   // { payload, payloadHash, stockHash, recipe }
+let busy = null;   // 'build' or 'send' while one is running; the inputs are locked
 
 const canSend = supported();
 function layout() {
@@ -42,6 +43,14 @@ async function loadIndex() {
   chooserState();
 }
 
+// While a file is being made or sent, the variant, the file chooser and Connect
+// can't change what is in progress.
+function lock() {
+  for (const el of document.querySelectorAll('input[name="variant"]')) el.disabled = Boolean(busy);
+  chooserState();
+  if (flasher || busy === 'send') $('b1').disabled = busy === 'send';
+}
+
 function setStep(n) { for (let i = 1; i <= 5; i++) $('n' + i).classList.toggle('now', i === n); }
 function show(which) { for (const id of ['done', 'wrong', 'mismatch']) $(id).hidden = id !== which; }
 
@@ -60,7 +69,12 @@ async function stockFrom(file, r) {
 }
 
 async function handle(file) {
-  if (!$('accept').checked || !index) return;
+  if (!$('accept').checked || !index || busy) return;
+  busy = 'build'; lock();
+  try { await make(file); } finally { busy = null; lock(); }
+}
+
+async function make(file) {
   $('status').textContent = 'Making the file…';
   show(null); made = null; layout();
   const r = await recipe();
@@ -79,6 +93,7 @@ async function handle(file) {
     $('sameLine').textContent = `${r.title}, checked`;
     $('imageHash').textContent = 'Matches the published file · SHA-256 ' + result.payloadHash;
     made = { ...result, recipe: r };
+    $('finishClock').hidden = r.version === 'no-clock';
     layout(); show('done'); setStep(3);
     $('status').textContent = `The "${r.title}" file is ready. Put the DX into Update mode (step 3).`;
     $('install').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -95,7 +110,7 @@ async function handle(file) {
 }
 
 function chooserState() {
-  const on = $('accept').checked && Boolean(index);
+  const on = $('accept').checked && Boolean(index) && !busy;
   $('choose').disabled = !on;
   $('drop').classList.toggle('off', !on);
   $('dropNote').textContent = !$('accept').checked ? 'Tick the box above first. The file stays on your computer.' : index ? 'The file stays on your computer.' : 'Loading…';
@@ -109,6 +124,7 @@ $('choose').addEventListener('click', () => $('file').click());
 $('file').addEventListener('change', (e) => { if (e.target.files[0]) handle(e.target.files[0]); e.target.value = ''; });
 const drop = $('drop');
 drop.addEventListener('dragover', (e) => { e.preventDefault(); if (!$('choose').disabled) drop.classList.add('over'); });
+// (handle() ignores a drop while the zone is off or a build or send is running)
 drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) handle(e.dataTransfer.files[0]); });
 
@@ -124,40 +140,73 @@ function task(n, text, kind) {
 function failText(e) {
   if (e instanceof FlashError) {
     if (e.kind === 'permission') return 'The browser wasn\'t allowed to talk to the DX. Click the icon at the left of the address bar, allow MIDI, and press Connect again.';
+    if (e.kind === 'send') return `${e.message}. Switch the DX off, put it into Update mode again (step 3), then press Connect and Send.`;
     return e.message;
   }
   return (e && e.message) || String(e);
 }
+// Run a send-panel step with its button disabled; the button comes back
+// afterwards, so a failed or finished step can be repeated.
 async function step(n, fn) {
   const b = $('b' + n); b.disabled = true;
-  try { await fn(); } catch (e) { task(n, failText(e), 'err'); b.disabled = false; }
+  try { await fn(); } catch (e) { task(n, failText(e), 'err'); live(failText(e)); }
+  finally { b.disabled = n === 2 && !flasher; lock(); }
 }
-// Rebuild the port list, keeping the port the user chose if it is still there.
+const live = (text) => { $('sendLive').textContent = text; };
+// Rebuild the port list, keeping the port the user chose if it is still
+// there. If it has gone, nothing is chosen, so Send asks for a port rather
+// than going to another reface.
 function fillPorts() {
   const sel = $('port'); const chosen = sel.value; sel.innerHTML = '';
-  for (const o of flasher.outputs()) { const opt = document.createElement('option'); opt.value = o.id; opt.textContent = o.name; sel.appendChild(opt); }
-  if (chosen && [...sel.options].some((o) => o.value === chosen)) sel.value = chosen;
-  return sel.options.length;
+  const ports = flasher.outputs();
+  if (chosen && !ports.some((o) => o.id === chosen)) {
+    const opt = document.createElement('option'); opt.value = ''; opt.textContent = 'Choose the reface port'; sel.appendChild(opt);
+  }
+  for (const o of ports) { const opt = document.createElement('option'); opt.value = o.id; opt.textContent = o.name; sel.appendChild(opt); }
+  if (chosen && ports.some((o) => o.id === chosen)) sel.value = chosen;
+  return ports.length;
+}
+
+// Warn before the page is closed or left while blocks are going out, and
+// keep the screen awake for the transfer.
+const stay = (e) => { e.preventDefault(); e.returnValue = ''; };
+async function guard(on) {
+  if (on) {
+    addEventListener('beforeunload', stay);
+    try { guard.lock = navigator.wakeLock ? await navigator.wakeLock.request('screen') : null; } catch (e) { guard.lock = null; }
+  } else {
+    removeEventListener('beforeunload', stay);
+    if (guard.lock) { guard.lock.release().catch(() => {}); guard.lock = null; }
+  }
 }
 $('b1').addEventListener('click', () => step(1, async () => {
   task(1, 'Connecting…', 'now');
-  flasher = await Flasher.connect();
-  flasher.access.addEventListener('statechange', () => fillPorts());
+  const f = await Flasher.connect();
+  f.access.addEventListener('statechange', () => { if (flasher === f) fillPorts(); });
+  flasher = f; $('port').innerHTML = '';
   if (!fillPorts()) throw new FlashError('absent', 'No reface found on USB. Check the cable, that the DX is in Update mode and that no other program is using it, then press Connect again.');
   task(1, 'Connected.', 'ok');
   $('port').disabled = false; $('b2').disabled = false; task(2, undefined, 'now');
 }));
 $('b2').addEventListener('click', () => step(2, async () => {
   const out = flasher.access.outputs.get($('port').value);
-  if (!out) throw new FlashError('absent', 'That port is gone. Press Connect again.');
+  if (!out) throw new FlashError('absent', 'Choose the reface port, or press Connect again.');
   const msgs = messages(made.payload, made.recipe.smf);
   const bar = $('bar'); bar.hidden = false; bar.max = msgs.length; bar.value = 0;
-  $('port').disabled = true;
+  busy = 'send'; lock(); $('port').disabled = true; $('sendNext').hidden = true;
   task(2, `Sending block 0 of ${msgs.length}…`, 'now'); $('t2').prepend(bar);
+  live('Sending the firmware to the DX. This takes about three minutes.');
+  await guard(true);
   try {
-    await flasher.send(out, msgs, (i, n) => { bar.value = i; $('t2').lastChild.textContent = `Sending block ${i} of ${n}… about ${Math.ceil((n - i) * 1.4 / 60)} min left`; });
-  } finally { $('port').disabled = false; }
-  task(2, 'All blocks sent. Watch the DX display.', 'ok'); $('t2').prepend(bar);
+    await flasher.send(out, msgs, (i, n) => {
+      bar.value = i;
+      const left = (n - i) * 1.4;
+      $('t2').lastChild.textContent = `Sending block ${i} of ${n}… ${left < 60 ? 'less than a minute' : `about ${Math.round(left / 60)} min`} left`;
+      if (i % 35 === 0) live(`Block ${i} of ${n} sent.`);
+    });
+  } finally { busy = null; await guard(false); $('port').disabled = false; }
+  task(2, 'All blocks sent. Keep the cable connected until the DX display reads Completed.', 'ok'); $('t2').prepend(bar);
+  live('All blocks sent. Keep the cable connected until the DX display reads Completed.');
   $('sendNext').hidden = false; setStep(5);
 }));
 

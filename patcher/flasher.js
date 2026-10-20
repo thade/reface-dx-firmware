@@ -5,8 +5,11 @@
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Web MIDI with SysEx, on a computer. Android Chrome has Web MIDI too, but
+// sending from a phone has not been tried, so phones get the download route.
 export function supported(nav = globalThis.navigator, win = globalThis) {
-  return Boolean(nav && nav.requestMIDIAccess && win.isSecureContext !== false);
+  const mobile = nav && (nav.userAgentData ? nav.userAgentData.mobile : /Android|iPhone|iPad|Mobile/i.test(nav.userAgent || ''));
+  return Boolean(nav && nav.requestMIDIAccess && win.isSecureContext !== false && !mobile);
 }
 
 export class FlashError extends Error {
