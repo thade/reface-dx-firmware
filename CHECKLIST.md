@@ -132,3 +132,13 @@ Write the outcome of each phase here with the display text and MIDI monitor obse
   Step 7: after the power-cycle FUNCTION opens on Voice (page index is RAM state, same as stock); Voice page with a
   POLY voice shows an empty column 3 (Part Mode layout swap intact). Phase 3 passes: the MIDI 2 CLOCK switch works,
   persists, and the other pages behave as stock.
+- Phase 3b (display fixes, payload `c5ea5147…f709`), 2026-10-20: first transfer ran 3:03 but the DX stayed at
+  "98%" because the updater app was quit a second after its timer stopped, before the last blocks had been
+  delivered. Lesson: never quit the updater until the DX display itself shows "Completed". Recovery per Yamaha's
+  guide: repeat the update from the beginning (re-enter Update mode).
+  Repeat from Update mode: on relaunch the updater had silently defaulted its port to another interface (the
+  Zoom L6) after the DX re-enumerated; aborted that, relaunched, confirmed "reface DX" in the port menu, transfer
+  3:08, DX showed "Completed. 1.30 --> 1.30 Reboot." Lesson: check the port menu every launch.
+  After reboot: MIDI 2 shows the "MIDI 2" title, six dots with the sixth filled, CLOCK on one line (user-confirmed).
+  SysEx dump: byte 0x15 = 1 and MIDI control = 1 as set before the reflash (the update leaves the settings
+  sector alone); 0 x F8 in 8 s, 41 x FE. Phase 3b passes. Display: ON/off cells are the stock switch graphics.
