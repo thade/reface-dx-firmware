@@ -28,6 +28,9 @@ reface_csdx_fw/
   tools/patch_clock_menu.py        add a FUNCTION "MIDI 2" page with a clock on/off switch
   tools/selftest.py                rebuild all three payloads in memory, check pinned SHA-256 (stdlib only)
   tools/verify_menu.py             emulate the MIDI 2 page code under unicorn (draws, trampoline, keys, page apply)
+  tools/ui_sim.py                  UI simulator: real panel key events through the firmware's own UI entry
+  tools/lcd.py                     128x64 LCD model fed by captured blits (text rendering)
+  tools/verify_ui.py               UI-level checks: FUNCTION cycling, toggle, persistence, screen, differential fuzz
   out/reface_updater_CSDX_v130.mid the untouched payload from the official updater
   out/reface_csdx_main_v130.bin    decoded raw image (1,966,080 bytes)
   out/*_noclock.*                  patched image and patched updater payload
@@ -54,6 +57,7 @@ python3 tools/patch_clock.py out/reface_csdx_main_v130.bin out/reface_csdx_main_
 python3 tools/patch_clock_menu.py out/reface_csdx_main_v130.bin out/reface_csdx_main_v130_clockmenu.bin out/reface_updater_CSDX_v130_clockmenu.mid
 python3 tools/selftest.py                                       # all three payload hashes must print OK
 venv/bin/python tools/verify_menu.py                            # emulated behaviour checks, must print ALL OK
+venv/bin/python tools/verify_ui.py                              # whole-UI emulation incl. persistence and screen, ALL OK
 ```
 
 `tools/make_updaters.sh` runs both checks before building the apps.
@@ -265,8 +269,14 @@ entries, LCD bitmap formats, event routing) is documented in
 dispatcher, the real parameter setter (after running the firmware's own
 group registrar and hook installer), the real label-list walker and the
 real page cycler, with stock pages as control cases; both trailer checksums
-are checked against stock.  Not yet flashed on hardware — see CHECKLIST.md
-Phase 3.  An earlier build of this patch (never flashed) would not have
+are checked against stock.  `tools/verify_ui.py` goes further and runs the
+firmware's whole UI stack: panel key events enter at the real top-level
+dispatcher, the FUNCTION button (micom key 0x0B) cycles onto the new page,
+the leftmost DATA ENTRY switch (key 0x12) toggles the flag through the
+real parameter engine, leaving FUNCTION saves the 32-byte block to the NV
+image and triggers the flash write, re-entering returns to page 5, and the
+deferred renderer's output is captured on a 128×64 LCD model (MENU_RE §6,
+§9).  Not yet flashed on hardware — see CHECKLIST.md Phase 3.  An earlier build of this patch (never flashed) would not have
 worked: two independent reviews on 2026-10-20 found the 0x15 entry clamped
 every value to 0, the page index clamped to 4, the toggle listened on a
 key id that is not a column key, and the CLOCK bitmap sat on a sampled

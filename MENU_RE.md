@@ -216,32 +216,67 @@ Emulating 0x020448CC with M[0xC]=0x04011084, M[4]=2 lands M[0x14] at exactly
 the MIDI page record and calls 0x02046130 (verified with unicorn before and
 after patching; see §8).  This is the mechanism the patch rides on.
 
-### 3.3 Page selection and the column keys
+### 3.3 Page selection, the FUNCTION button and the column keys
 
-* **Micom key ids 0x12–0x15 are the four column keys**, not page jumps.
-  0x02044BD0(id) computes `id − 0x12` and 0x02044B60 stores it in **M[5]**
-  (literal 0x0411216C), the item cursor; page-apply copies M[5] to M[8] and
-  0x0204457C turns it into the focused layout row `layout + 16*M[8]`
-  (clamped to `record[0]−1`, stored at M+0x18).  The same event is also
-  forwarded as event 3 to the current page's key handler, which is where the
-  stock handlers toggle *by column*: MIDI page id 0x14 → 0x0E (CONTROL,
-  column 2), 0x15 → 0x06 (LOCAL, column 3); System page 0x12/0x13/0x14 →
-  0x0C/0x0D/0x0B; Voice page 0x13 → Part Mode (column 1).  Our CLOCK item is
-  column 0, so its key id is **0x12**.
-* **Page cycling** is 0x02044960: `count = [M[0x10]]` (the descriptor's
-  count byte), `if M[7] >= count−1: M[4] = 0 else M[4] = M[7]+1`, then
-  M[5] = 0 and page-apply.  Reached from the cursor-key handler 0x02044B1C
-  for key id 0x10 (when `[0x0411216C] == 8`) or 0x0B (when it is 7).  It
-  honours the patched count of 6, so page 5 is reachable: emulated 4 → 5 →
-  0 (`verify_menu.py`).
+Everything in this section was confirmed by running the firmware's own UI
+code under emulation (`tools/ui_sim.py`, `tools/verify_ui.py`): panel key
+events are fed to the real top-level UI entry and the resulting state and
+LCD output are observed.
+
+* **Top-level UI entry**: `0x02044FD0(event, data)`.  Events 6–11 go to a
+  small jump table; everything else first goes to the current screen mode's
+  handler (table 0x020C3C64 indexed by `M[0]`, called through 0x02045168)
+  and, if that returns 0 and the event is a key press (event 8, `data =
+  {2, id}`), to the **mode-switch state machine 0x02044E68**.  The UI task at
+  0x020896C0.. calls this entry.
+* **Screen-mode table 0x020C3C64** (10 slots; this file used to say slot 6
+  is FUNCTION — it is slot 7):
+
+  | slot | handler | entered by key | content |
+  |---|---|---|---|
+  | 1 | 0x0204544C | 0x02 | main screen |
+  | 2, 3 | 0x02045D08 / 0x02045D2C | 0x00, 0x01 | |
+  | 4, 5 | 0x02045D50 / 0x02045E78 | 0x0D, 0x0E | |
+  | 6 | 0x02046EDC | 0x0F | 20-page edit group (descriptor file 0x13DA90 → RAM 0x040110D8), pages picked by keys 0x03–0x0A via 0x02044A50 |
+  | **7** | **0x0204639C** | **0x0B** | **FUNCTION group**, descriptor RAM 0x04011084, the five (patched: six) pages of §3.1 |
+  | 8 | 0x02046524 | 0x10 | second group {2 pages, RAM 0x0401108C} |
+  | 9 | 0x02047304 | 0x0C | micom pump |
+
+  Key id 0x0B is therefore the **FUNCTION button**.  Entering mode 7 goes
+  through 0x02045398, which first asks the Looper whether it is busy
+  (0x02041058 / 0x0204085C) and refuses with a message if so.
+* **Page cycling**: pressing FUNCTION again while in mode 7 reaches
+  0x02044B1C (from the master dispatcher's event-8 branch for ids 0x0B/0x10)
+  which, because `M[0] == 7`, calls the cycler **0x02044960**: `count =
+  [M[0x10]]` (the descriptor's count byte); `if M[7] >= count−1: M[4] = 0
+  else M[4] = M[7]+1`; `M[5] = 0`; page-apply.  Emulated: stock 0 1 2 3 4 0,
+  patched 0 1 2 3 4 **5** 0.  (Key 0x10 does the same in mode 8.)
+* **Micom key ids 0x12–0x15 are the four column keys** (the DATA ENTRY
+  switches under the display; the Owner's Manual's "tap the leftmost switch
+  in the DATA ENTRY section" toggles AUTO P.OFF, column 0 of the System
+  page), not page jumps.  0x02044BD0(id) computes `id − 0x12` and 0x02044B60
+  stores it in **M[5]** (literal 0x0411216C), the item cursor; page-apply
+  copies M[5] to M[8] and 0x0204457C turns it into the focused layout row
+  `layout + 16*M[8]` (clamped to `record[0]−1`, stored at M+0x18).  The same
+  event is also forwarded as event 3 to the current page's key handler,
+  which toggles *by column*: MIDI page id 0x14 → 0x0E (CONTROL, column 2),
+  0x15 → 0x06 (LOCAL, column 3); System page 0x12/0x13/0x14 → 0x0C/0x0D/0x0B;
+  Voice page 0x13 → Part Mode (column 1).  Our CLOCK item is column 0, so
+  its key id is **0x12** — the leftmost DATA ENTRY switch.
+* **Leaving FUNCTION**: any other mode key (e.g. 0x0F) switches mode; the
+  switcher sends event 2 to the old handler first.  0x0204639C's event 2
+  runs the settings dirty check 0x020444CC(2) and, if anything in the
+  32-byte block changed, 0x02044460(2) → 0x02042840 (live → NV shadow)
+  → 0x02044358 → flash write (§9).  On re-entry 0x020463CC copies S[5]
+  into the descriptor's current-page byte and 0x02044C84 restores M[4]
+  from it, so the unit comes back on the page it left (page 5 after the
+  UI-entry max patch; stock clamps to 4).
 * `0x02044B78(event)` — event 9 is the data-entry slider edit of the item at
   `[event+2]`, not a page change.
 * Param **0x00800005**: the page index *is* a parameter — the 0x0080 group's
   RAM buffer is 0x0414815C, so param 5 == `[0x0414815C+5]`.  Every page's key
   handler re-asserts its own page through `0x0204564C(0x00800005, 1, own)`
-  on event 1; on FUNCTION entry 0x020463CC copies S[5] into the descriptor's
-  current-page byte and 0x02044C84 loads it into M[4].  Its entry has
-  max 4 in stock, hence the UI-entry patch.
+  on event 1.  Its entry has max 4 in stock, hence the UI-entry patch.
 
 ### 3.4 Master event flow
 
@@ -254,10 +289,11 @@ panel MCU -> mailbox/ring -> micom pump 0x02047304(msg, data)
   decoded ([evt]==2 press, [evt+1]=id), then event 3 is forwarded.
 ```
 
-Screen-mode handler table (10 Thumb fns) at ROM 0x020C3C64; slot 6 is the
-FUNCTION-group dispatcher **0x0204639C** (events: 1 enter / 2 screen-switch /
-5 timer / 0xF leave), slot 7 = 0x02046524 for the second group
-({2, 0x0401108C}, records from ROM 0x13DA44).
+Screen-mode handler table (10 Thumb fns) at ROM 0x020C3C64 (see §3.3 for
+the slot list); slot 7 is the FUNCTION-group dispatcher **0x0204639C**
+(events: 1 enter / 2 leaving — runs the settings save / 5 timer / 0xF
+re-apply), slot 8 = 0x02046524 for the second group ({2, 0x0401108C},
+records from ROM 0x13DA44), slot 6 = 0x02046EDC for the 20-page edit group.
 
 ## 4. Layouts
 
@@ -296,6 +332,15 @@ Refresh after a toggle: `0x0204479C` → reads the current record from
 `M+0x14` and draws its `+0xC` (static) and `+0x10` (value) routines.
 
 ## 6. LCD drawing
+
+Drawing is deferred: page-apply and refresh only record the current
+record's static/value routines (0x020459CC/0x020459E4 into 0x04148250) and
+raise request flags (0x02045A90 → 0x02045B60(0x12, 4)).  The render tick
+**0x0203BE20(flags)**, run by the UI task, begins a frame (0x020290AC clears
+the framebuffer), calls the stored routines, and ends the frame
+(0x020290C8).  A value-only refresh does not begin a new frame, so only the
+changed cell is redrawn; a page change always starts from a cleared frame,
+which is why our one-column page leaves columns 1–3 blank.
 
 1bpp framebuffer, blit `0x020291E8(bitmap, rect_struct)` (rect = 4 words x0,y0,x1,y1 on the stack); bitmaps are
 **1bpp, row-major, MSB-first** (32px wide = 4 bytes/row).
@@ -424,17 +469,37 @@ control cases:
 * boot copy: patched descriptor lands at RAM 0x04011084 as {6, new list}
 * checksums: sampled lanes and byte-sum equal stock; 0x140000..3 untouched
 
+`verify_ui.py` (with `ui_sim.py` and the LCD model `lcd.py`) drives the
+firmware's real top-level UI entry 0x02044FD0 with panel key events, with
+the LCD blit, message post, flash driver, IRQ/sleep and Looper-busy queries
+stubbed and everything else running as compiled:
+
+* FUNCTION (key 0x0B) cycles 0 1 2 3 4 0 on stock, 0 1 2 3 4 5 0 on patched;
+  page 5 is our record
+* key 0x12 on page 5 toggles byte 0x15 (1, 0, 1) through the real setter;
+  the posted parameter change carries the value; no other settings byte
+  moves; control: key 0x14 on the stock MIDI page sets MIDI control
+* keys 0x13–0x15/0x17 on page 5 only move the cursor
+* leaving FUNCTION after a toggle: NV shadow byte 0x15 updated, one flash
+  write; stock leave without change: no write; re-entering returns to page
+  5 (stock control: page 4)
+* screen: page 5 renders the title bar, the CLOCK label and the ON cell
+  with columns 1–3 blank after arriving from the Job page; a toggle redraws
+  only the value cell and the off graphic matches the stock CONTROL off cell
+* differential fuzz: random key sequences on stock and patched never fault,
+  diverge only at the extra page, and leave all settings bytes other than
+  0x15 identical
+
 ### Known limitations / open questions
 
-* **Which physical control sends id 0x12 on page 6** follows the stock
-  convention (the column-0 control, as for auto power-off on the System
-  page) but has not been confirmed on hardware.  The per-key/lamp loops at
-  0x02044620 and 0x02045150 cover 0x16 entries, suggesting ids 0x00–0x15
-  only, so ids ≥ 0x16 should not be relied on.
-* **Persistence of byte 0x15**: the SYSTEM group covers all 32 bytes, and
-  the Data List's "SYSTEM Common 36 (0x24)" bulk size matches 32 data bytes
-  + header, so SysEx dump/restore carries it.  The flash settings save was
-  not fully traced.  Confirm on hardware by power-cycling after a toggle.
+* **Which physical control sends id 0x12**: the leftmost DATA ENTRY switch
+  (column 0; the Owner's Manual uses it to toggle AUTO P.OFF on the System
+  page).  Confirmed by emulation of the real key routing; hardware check
+  still pending.  The per-key/lamp loops at 0x02044620 and 0x02045150 cover
+  0x16 entries, so ids ≥ 0x16 do not exist.
+* **Persistence of byte 0x15**: traced (§9) and emulated — saved with the
+  whole block when leaving FUNCTION, restored at boot.  Hardware check:
+  toggle, leave FUNCTION, power-cycle.
 * **Voice page layout is frozen on the mono layout**: the runtime page-0
   layout swap (§3.1) writes RAM 0x04011024 by Part Mode, but the patched
   descriptor points at a list in free ROM that this write never touches, so
@@ -443,8 +508,42 @@ control cases:
   column.  A fix that keeps the records in RAM is preferable to repointing
   the literal at file 0x26398 into free ROM, since the firmware would then
   write into a region that may be flash; CHECKLIST Phase 3 checks it.
-* The page-6 value draw paints only column 0; whether columns 1–3 are
-  cleared of the previous page's values is not known (hardware check).
+* The page-6 value draw paints only column 0; the renderer clears the
+  frame on every page change (§6), so columns 1–3 are blank — verified on
+  the emulated LCD arriving from the Job page.  The title bar reuses the
+  MIDI page's icon and so reads "MIDI", not "MIDI 2".
 * Panel DATA ENTRY switch editing of the type-4 item (op=2 path) is not
   wired for switches in stock firmware; the intended interaction is the
   column-0 key or the page toggle itself.
+
+## 9. Settings persistence (NV image)
+
+Traced statically and by emulation (2026-10-20).  Non-volatile settings are
+a 0x1800-byte image mirrored at RAM 0x04000000 and flash 0x02200000 (the
+sector after this image):
+
+| RAM | flash | content |
+|---|---|---|
+| 0x04000000 | 0x02200000 | magic 0xDEADFACE |
+| 0x04001500 | 0x02201500 | SYSTEM block shadow, 32 bytes (copy of 0x041480A0) |
+| 0x04001600 | 0x02201600 | group 0x784000 shadow, 16 bytes |
+| 0x040017FC | 0x022017FC | trailing magic 0xDEADFACE |
+
+* `0x02042840` SAVE live → shadow and `0x0204281C` LOAD shadow → live are
+  whole-block 32-byte copies (ldm/stm); `0x02042878` is a 32-byte memcmp
+  used as the dirty test.  No per-parameter list, nothing skips reserved
+  bytes, so **byte 0x15 is saved and restored like every other byte**.
+* Commit: `0x02044460(sel)` copies the shadows then `0x02044358` →
+  `0x020897D8` writes the whole 0x1800 image through the boot-ROM flash
+  driver table at 0x04FF0000 (query / erase / program; interrupts off).
+* Trigger: leaving the FUNCTION screen (0x0204639C event 2) when the dirty
+  test says something changed; also SysEx bulk-in paths and boot
+  migration.  Not on every setter call and not at power-off, so a change
+  made on the FUNCTION screen is lost if the unit is switched off while
+  still on that screen — same as stock behaviour for any setting.
+* Boot: `0x02020E64` → `0x020443DC` copies flash → RAM and checks both
+  magics; if invalid, defaults are written (0x02042A7C, 0x15 → 0); then
+  `0x0204281C` restores the live block.
+* Emulated end to end in `verify_ui.py`: toggle on page 5, leave FUNCTION →
+  NV shadow byte 0x15 = 1 and exactly one flash write; stock leave without
+  change → no write; re-enter → page 5.
