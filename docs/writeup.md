@@ -27,7 +27,7 @@ hardware.
   Voice page's poly/mono layout switch keeps working. Two independent reviews on 2026-10-20 found the first build
   would not have worked (setting clamped to 0, wrong key id, trailer
   checksum broken); the fixed build is verified by emulating the real
-  parameter engine, key dispatcher and page cycler. See MENU_RE.md.
+  parameter engine, key dispatcher and page cycler. See menu-internals.md.
 - **CP firmware on a DX: no.** Different Yamaha chip (SWX08 vs SSP2),
   different board, and the CP needs a 64 MB sample ROM the DX does not have.
   The only physically possible swap is CS firmware on a DX, and that is the

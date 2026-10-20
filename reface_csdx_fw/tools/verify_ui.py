@@ -67,7 +67,7 @@ def test_receiver(stock, img, P):
     ok &= check(v == 1, "patched: live byte 0x15 = %d after the real receiver ran (expected 1)%s" % (
         v, "" if v == 1 else "\n       -> the type-0x0B handler 0x02036C84 -> 0x0203A65C dispatches system addresses through"
         " table 0x0209FCBC only for lo <= 0x13 (cmp #0x13 at 0x0203A676); 0x15 falls through and is never stored."
-        " On hardware the CLOCK toggle will do nothing visible. See MENU_RE.md section 2.3."))
+        " On hardware the CLOCK toggle will do nothing visible. See docs/menu-internals.md section 2.3."))
     return ok
 
 def test_toggle(stock, img, P):

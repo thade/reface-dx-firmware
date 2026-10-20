@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<title>reface DX clock switch</title>
+<meta name="description" content="Make the unofficial MIDI clock switch firmware for the Yamaha reface DX from Yamaha's own v1.30 updater, in your browser, and send it to the DX.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Archivo+Narrow:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #FFFFFF; --ink: #111111; --ink-2: #333333; --muted: #5E5E5E; --faint: #767676; --numeral: #D0D0D0;
+  --rule: #111111; --line: #DDDDDD; --red: #1D4ED8; --red-ink: #1E40AF; --ok: #1A7F45; --wash: #F6F6F6; --on-red: #FFFFFF;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E0E0E; --ink: #F2F2F2; --ink-2: #D6D6D6; --muted: #A8A8A8; --faint: #8A8A8A; --numeral: #3A3A3A;
+    --rule: #F2F2F2; --line: #2E2E2E; --red: #60A5FA; --red-ink: #93C5FD; --ok: #4CC47E; --wash: #1A1A1A; --on-red: #0E0E0E;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E0E0E; --ink: #F2F2F2; --ink-2: #D6D6D6; --muted: #A8A8A8; --faint: #8A8A8A; --numeral: #3A3A3A;
+  --rule: #F2F2F2; --line: #2E2E2E; --red: #60A5FA; --red-ink: #93C5FD; --ok: #4CC47E; --wash: #1A1A1A; --on-red: #0E0E0E;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.5 'Archivo', system-ui, sans-serif; }
+a { color: var(--ink); text-underline-offset: 3px; }
+a:hover { color: var(--muted); }
+code, .mono { font-family: 'Archivo Narrow', ui-monospace, monospace; font-weight: 600; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+header { border-bottom: 3px solid var(--rule); }
+header .wrap { padding-top: 20px; padding-bottom: 18px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.brand { font-weight: 800; font-size: 20px; letter-spacing: -0.01em; }
+.brand span { color: var(--red); }
+nav { display: flex; gap: 28px; }
+.label, nav a { font-family: 'Archivo Narrow', sans-serif; font-weight: 600; font-size: 15px; text-transform: uppercase; letter-spacing: 0.07em; }
+nav a { text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+nav a svg { width: 18px; height: 18px; fill: currentColor; }
+main { padding-bottom: 80px; }
+.row { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; padding: 44px 0; border-bottom: 1px solid var(--rule); }
+.row:last-child { border-bottom: 0; }
+.side { grid-column: span 2; }
+.body { grid-column: span 10; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.num { font-weight: 800; font-size: 96px; line-height: 0.85; color: var(--numeral); }
+.num.now { color: var(--red); }
+.label.red { color: var(--red-ink); padding-top: 6px; display: block; }
+.hero { padding: 64px 0 56px; }
+h1 { grid-column: span 9; margin: 0; font-weight: 800; font-size: clamp(42px, 7vw, 76px); line-height: 0.98; letter-spacing: -0.035em; }
+.lead { grid-column: span 7; margin: 28px 0 0; font-size: 20px; }
+h2 { margin: 0; font-weight: 700; font-size: 30px; line-height: 1.15; letter-spacing: -0.015em; }
+h3 { margin: 0; font-weight: 700; font-size: 22px; line-height: 1.2; }
+p, ol, ul, dl { margin: 0; }
+.measure { max-width: 700px; }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 22px; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; border-radius: 0; }
+.outline { border: 2px solid var(--ink); background: transparent; color: var(--ink); }
+.solid { border: 0; background: var(--red); color: var(--on-red); }
+.solid:disabled, .solid[aria-disabled="true"] { background: var(--numeral); color: var(--muted); cursor: not-allowed; }
+.cols3, .cols2 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; list-style: none; padding: 0; }
+.cols2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
+label.accept { display: flex; align-items: center; gap: 12px; min-height: 44px; font-weight: 700; cursor: pointer; }
+label.accept input { width: 22px; height: 22px; accent-color: var(--red); flex: none; }
+label.pick { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
+label.pick input { width: 20px; height: 20px; margin-top: 4px; accent-color: var(--red); flex: none; }
+.drop { border: 2px dashed var(--ink); padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+.drop.over { border-style: solid; border-color: var(--red); background: var(--wash); }
+.drop.off { border-color: var(--faint); color: var(--muted); }
+.drop .big { font-size: 22px; font-weight: 700; }
+.small { font-size: 15px; color: var(--muted); }
+dl.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; border-top: 2px solid var(--rule); padding-top: 14px; }
+dl.facts dd { margin: 4px 0 0; }
+dl.facts .v { font-family: 'Archivo Narrow', sans-serif; font-size: 14px; color: var(--muted); word-break: break-all; margin-top: 2px; }
+.alert { border-top: 4px solid var(--red); padding-top: 16px; display: flex; flex-direction: column; gap: 12px; }
+.alert h2 { color: var(--red-ink); }
+.tasks { list-style: none; padding: 0; display: flex; flex-direction: column; }
+.tasks li { display: grid; grid-template-columns: 44px minmax(0, 1fr); column-gap: 16px; row-gap: 8px; padding: 14px 0; border-top: 1px solid var(--rule); align-items: center; }
+.tasks li:last-child { border-bottom: 1px solid var(--rule); }
+.tasks .k { font-weight: 800; font-size: 22px; }
+.tasks .t { font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.tasks .state { grid-column: 2; font-size: 15px; color: var(--muted); }
+.tasks .state:empty { display: none; }
+.tasks .state.err { color: var(--red-ink); }
+.tasks li.wait { color: var(--faint); }
+.tasks li.now .k { color: var(--red); }
+.tasks li.ok .k, .tasks li.ok .state { color: var(--ok); }
+select { font: inherit; padding: 8px 10px; border: 2px solid var(--ink); background: var(--bg); color: var(--ink); min-width: 220px; }
+progress { width: 100%; height: 14px; accent-color: var(--red); }
+ol.list, ul.list { padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+.lcd { font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.2; background: #2E3F8F; color: #DDE6FF; padding: 10px 14px; display: inline-block; white-space: pre; border-radius: 4px; }
+footer { border-top: 3px solid var(--rule); }
+footer .wrap { padding-top: 20px; padding-bottom: 36px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; font-size: 14px; color: var(--muted); }
+[hidden] { display: none !important; }
+@media (max-width: 760px) {
+  .row { display: flex; flex-direction: column; gap: 14px; padding: 32px 0; }
+  .num { font-size: 64px; }
+  .cols3, .cols2, dl.facts, footer .wrap { grid-template-columns: 1fr; }
+  .lead { margin-top: 0; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <span class="brand">reface DX <span>clock switch</span></span>
+    <nav><a href="https://github.com/thade/reface-dx-firmware"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Source</a></nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="row hero">
+    <h1>Turn off the MIDI clock on your reface DX.</h1>
+    <p class="lead">This page turns Yamaha's own reface CS/DX firmware v1.30 into a version with a MIDI clock switch in the FUNCTION menu, right here in this browser tab, and can send it to the DX. Nothing is uploaded, and the page contains none of Yamaha's firmware.</p>
+  </section>
+
+  <section class="row" id="what">
+    <span class="side label">What it does</span>
+    <div class="body">
+      <p class="measure">The reface DX always sends MIDI clock, and Yamaha gives no way to stop it. This firmware adds a sixth FUNCTION page, <strong>MIDI 2</strong>, with one item, <strong>CLOCK</strong>. When CLOCK is off the DX sends no clock. Everything else works as before, and the DX keeps the setting when it is switched off.</p>
+      <div class="lcd">MIDI 2            ◇◇◇◇◇◆
+CLOCK
+ ON</div>
+      <p class="small measure">To reach the page, press <strong>FUNCTION</strong> until MIDI 2 shows. To switch, tap the leftmost <strong>DATA ENTRY</strong> switch. A version with the clock permanently off is also offered below.</p>
+    </div>
+  </section>
+
+  <section class="row">
+    <span class="side num now" id="n1">1</span>
+    <div class="body">
+      <h2>Download Yamaha's reface updater v1.30</h2>
+      <p class="measure">On Yamaha's support site, download the <strong>reface CS/DX updater v1.30</strong> for Mac. You get <code>reface_updater_CSDX_v130-3_mac.zip</code>; keep it zipped, you don't need to open it.</p>
+      <p><a class="button outline" href="https://usa.yamaha.com/support/updates/reface_csdx_updater_for_mac.html" rel="noopener">Yamaha's reface CS/DX updater page →</a></p>
+      <p class="small">The updater for the <strong>CS and DX</strong>, not the one for the CP and YC. The Windows download holds the same firmware file and works too.</p>
+    </div>
+  </section>
+
+  <section class="row">
+    <span class="side label red">Before you install</span>
+    <div class="body">
+      <ul class="cols3">
+        <li>This is unofficial firmware, not made or supported by Yamaha. It replaces the main firmware of your DX.</li>
+        <li>The DX's update program is never changed, so you can put Yamaha's firmware back the same way if anything goes wrong. This has been done.</li>
+        <li>Yamaha's licence does not allow changing its firmware without permission. Installing this is your decision and your responsibility.</li>
+      </ul>
+      <label class="accept"><input type="checkbox" id="accept"> I understand and accept these risks</label>
+    </div>
+  </section>
+
+  <section class="row" id="make">
+    <span class="side num" id="n2">2</span>
+    <div class="body">
+      <h2>Make the file</h2>
+      <div>
+        <label class="pick"><input type="radio" name="variant" value="clock-switch" checked> <span><strong>Clock switch.</strong> The MIDI 2 page with the CLOCK item. The clock is on until you turn it off.</span></label>
+        <label class="pick"><input type="radio" name="variant" value="no-clock"> <span><strong>Clock always off.</strong> No menu change; the DX never sends clock. Four bytes differ from Yamaha's firmware.</span></label>
+      </div>
+      <div class="drop off" id="drop">
+        <p class="big">Drop <code>reface_updater_CSDX_v130-3_mac.zip</code> here</p>
+        <p class="small">or the <code>reface updater.dat</code> inside it</p>
+        <button class="button solid" id="choose" type="button" disabled>Choose the file</button>
+        <input type="file" id="file" accept=".zip,.dat,.mid" hidden>
+        <p class="small" id="dropNote">Tick the box above first. The file stays on your computer.</p>
+      </div>
+      <p class="small" id="status" role="status" aria-live="polite"></p>
+
+      <div id="done" hidden>
+        <dl class="facts">
+          <div><dt class="label">From</dt><dd><strong>Yamaha's reface updater v1.30</strong></dd><dd class="v" id="stockHash"></dd></div>
+          <div><dt class="label">Made</dt><dd><strong>On this computer</strong></dd><dd class="v">Nothing uploaded</dd></div>
+          <div><dt class="label">Result</dt><dd><strong id="sameLine">The firmware file, checked</strong></dd><dd class="v" id="imageHash"></dd></div>
+        </dl>
+      </div>
+
+      <div class="alert" id="wrong" hidden role="alert">
+        <h2>That isn't Yamaha's reface CS/DX updater, version 1.30.</h2>
+        <p>Nothing was made: this page only works from the exact v1.30 updater file.</p>
+        <p class="small mono" id="wrongDetail"></p>
+        <ul class="list">
+          <li><strong>It's the CP/YC updater.</strong> Download the one for the <strong>reface CS/DX</strong>.</li>
+          <li><strong>The download didn't finish.</strong> Download it again and drop the new file.</li>
+        </ul>
+      </div>
+
+      <div class="alert" id="mismatch" hidden role="alert">
+        <h2>Something went wrong making the file.</h2>
+        <p>The file this page made doesn't match the published one, so it hasn't been offered. Nothing has been sent anywhere. Please <a href="https://github.com/thade/reface-dx-firmware/issues">report it</a> with your browser's name and version and the line below.</p>
+        <p class="small mono" id="mismatchDetail"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="row" id="install">
+    <span class="side num" id="n3">3</span>
+    <div class="body">
+      <h2>Put the DX into Update mode</h2>
+      <ol class="list measure">
+        <li>Power the DX from its AC adaptor, not from USB, and connect it to this computer by USB, with no hub in between.</li>
+        <li>Close any music software that uses the DX.</li>
+        <li>Switch the DX off. Hold the keys <strong>F#3</strong>, <strong>A3</strong> and <strong>C#4</strong> together and switch it on. The display reads <code>reface DX Update</code>. If it starts normally instead, switch off and try again.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="row" id="send">
+    <span class="side num" id="n4">4</span>
+    <div class="body">
+      <div id="sendBox" hidden>
+        <h2>Send it to the DX</h2>
+        <p class="small" style="margin: 12px 0 16px">The browser will ask permission to talk to the DX (it calls this "MIDI access"): allow it. The transfer takes about three minutes. Don't touch the DX or the cable until its display says <code>Completed</code>.</p>
+        <ol class="tasks" aria-live="polite">
+          <li id="m1" class="now"><span class="k">a</span><span class="t">Connect <button class="button solid" id="b1" type="button" aria-label="Connect to the DX">Connect</button></span><span class="state" id="t1"></span></li>
+          <li id="m2" class="wait"><span class="k">b</span><span class="t"><span>Send to <select id="port" disabled></select></span> <button class="button solid" id="b2" type="button" disabled aria-label="Send the firmware">Send</button></span>
+            <span class="state" id="t2"><progress id="bar" value="0" max="139" hidden></progress></span></li>
+        </ol>
+        <p class="small" id="sendNext" hidden style="margin-top: 14px"><strong>Sent. Now look at the DX</strong> (<a href="#finish">step 5</a>).</p>
+      </div>
+      <p class="small" id="sendWait" hidden>Make the file first (step 2), then send it here.</p>
+      <div id="noMidi" hidden>
+        <h2>Send it with Yamaha's updater instead</h2>
+        <p class="measure">This browser can't talk to the DX. Open this page in Chrome or Edge on a computer, or download the file and send it yourself:</p>
+        <p style="margin-top: 12px"><a class="button solid" id="download" download="reface updater.dat" href="#">Download the firmware file</a></p>
+        <p class="small measure" style="margin-top: 8px">It is a Standard MIDI File of 139 SysEx messages, 2,250,052 bytes, in the same format as Yamaha's <code>reface updater.dat</code>. Any SysEx tool that keeps the file's own timing (about 1.4 seconds between messages) can send it to the DX in Update mode. On a Mac you can also put it in a copy of Yamaha's updater app in place of its <code>Contents/Resources/reface updater.dat</code> and re-sign the app with <code>codesign --force --deep --sign - "reface updater.app"</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="row" id="finish">
+    <span class="side num" id="n5">5</span>
+    <div class="body">
+      <h2>Finish on the DX</h2>
+      <ol class="list measure">
+        <li>Wait until the display reads <code>Completed. 1.30 --> 1.30 Reboot.</code> If it stops at a percentage, switch the DX off, enter Update mode again and send again from step 3.</li>
+        <li>Switch the DX off and on with its Standby/On switch.</li>
+        <li>Press <strong>FUNCTION</strong> until <strong>MIDI 2</strong> shows, and tap the leftmost <strong>DATA ENTRY</strong> switch to set <strong>CLOCK</strong> off. Leave FUNCTION by pressing any other button, so the DX saves the setting.</li>
+      </ol>
+      <p class="small measure">Your voices and settings stay. To go back to Yamaha's firmware, run Yamaha's own updater the same way, from Update mode.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Independent work, not affiliated with or endorsed by Yamaha. Yamaha and reface are trademarks of Yamaha Corporation.</span>
+    <span>This page's code is MIT licensed. It can only ever make the published files, fingerprint <span class="mono" id="footHash">…</span>.</span>
+  </div>
+</footer>
+
+<script type="module" src="page.js"></script>
+</body>
+</html>

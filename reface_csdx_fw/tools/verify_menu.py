@@ -6,7 +6,7 @@ result at 0x02020000 under unicorn (big-endian Thumb), maps the 0x04xxxxxx RAM
 window, and drives the new code the way the firmware would.  Stock routines
 are used as control cases so a harness mistake cannot pass silently.
 
-Checks (see MENU_RE.md section 8):
+Checks (see docs/menu-internals.md section 8):
   static draw   blits our own "MIDI 2" title bitmap (128x12 at 0,0, after the
                 LCD-ready check) and calls label draw (our list)
   label list    walked by the REAL stock routine 0x0203C254: exactly one blit,
@@ -47,7 +47,7 @@ STACK = 0x041F0000
 RET   = 0x0FFFF000                                 # sentinel return address
 
 # stock landmarks used by the tests
-M_STATE      = 0x0411216C      # master UI state (MENU_RE section 5)
+M_STATE      = 0x0411216C      # master UI state (docs/menu-internals.md section 5)
 S_STATE      = 0x0414815C      # UI/0x0080-group buffer; +5 = current page
 STOCK_MIDI_STATIC = 0x02047D68
 STOCK_MIDI_LIST   = 0x020C4B30 + 0x20
@@ -58,7 +58,7 @@ PAGE_APPLY   = 0x020448CC
 EVT_DISPATCH = 0x02045168      # called by page-apply when the record has a key handler
 APPLY_DRAW   = 0x02045A2C
 KEY_GUIDE    = 0x02044848
-COPY_SRC, COPY_DST, COPY_END = 0x0215C9B8, 0x04010000, 0x040116E8   # boot copy (MENU_RE section 1)
+COPY_SRC, COPY_DST, COPY_END = 0x0215C9B8, 0x04010000, 0x040116E8   # boot copy (docs/menu-internals.md section 1)
 DISPATCHER   = 0x02044CB4      # master key-event dispatcher (event, data)
 PAGE_CYCLE   = 0x02044960      # FUNCTION page cycler, honours the descriptor count
 CLOCK_CALLER = 0x020415B8      # the only caller of the clock sender

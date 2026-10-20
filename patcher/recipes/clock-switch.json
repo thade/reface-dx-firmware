@@ -1,0 +1,109 @@
+{
+ "format": 1,
+ "version": "clock-switch",
+ "title": "Clock switch (MIDI 2 page)",
+ "built_from": "reface CS/DX updater v1.30",
+ "stock_sha256": "645309bef54e9444ebdeeacaa42f727b0fd0bdcfc06992ca1adde30a16112abb",
+ "stock_image_sha256": "993f2b1308ccfa24e2db4cec4da796e571fe3c75f7aac8b4905d9d76170d25cd",
+ "image_size": 1966080,
+ "image_sha256": "1eeab07ddd8201b7b327c14ed88fe39661f89f255f6cb17583808444d9c5f196",
+ "payload_sha256": "c5ea5147dfc9d05f2f6242ef436ecf95d7aef9bd0f801be3cbcb21c64b55f709",
+ "payload_size": 2250052,
+ "smf": {
+  "ppqn": 480,
+  "tempo_us": 500000,
+  "block_delta": 1309
+ },
+ "ops": [
+  [
+   "put",
+   136648,
+   "8R7+dA=="
+  ],
+  [
+   "put",
+   149770,
+   "8Rv84Q=="
+  ],
+  [
+   "put",
+   617383,
+   "BQ=="
+  ],
+  [
+   "put",
+   618903,
+   "AQ=="
+  ],
+  [
+   "put",
+   1301052,
+   "Bg=="
+  ],
+  [
+   "put",
+   1310724,
+   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJyBxyKigiikoIIoKKCCKDCggigoooIopJz5xyKAAAAAgAAAAIAAAACAAAAAgAAAAIAAAACAAAAAgAAAAIAAAACAAAAAgAAAAIAAAACAAAAAgAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAIAA0AAAAAAIWAAQAAAAAAAAAAP8AAAAAAAAAAAAVAAQAAAAAAAAAAAAAAACDgwAAAAAAAAAAAAAAAAAAg4MAAAAAAAAAAAAAAAAAAIODAAAAAAAAAAAAAAAAAA=="
+  ],
+  [
+   "put",
+   1311220,
+   "tQgoAdADKAPQByAA4B5IESEBIgX25fog4BcpCNEVeBMrAtESeFMrEtEPSwt9WyIBKwHRACIAtARICCEB9uX6DLwESwd1Wvbk+q8gALwIvAJHCEbAAIAABQQUgKAAAAAVBBSAoLUQsIQgAPbJ+SMoANAKIwCTAJMBI3+TAiMLkwNIBakA9sj/tkgE9tv/6bAEvBC8AkcIRsACFgE0AhYA1LUYSwZ9XCIBLAHRACIAIAAhJvbc+MW8GLwCRwgEFICgSwV9WysB0AW1EPbh+Lu8ELwIRxhHcEbABBSAoACbGNMoBdEASwBHcAIWAuABAAAAAhYA9AIWAfUCFgJZAhYClXU="
+  ]
+ ],
+ "titles": {
+  "at": [
+   613844,
+   613652,
+   613460,
+   613268,
+   613076
+  ],
+  "width": 128,
+  "height": 12,
+  "pages": 6,
+  "shift": 6,
+  "dots": {
+   "x0": 82,
+   "pitch": 8,
+   "y": 3,
+   "filled": [
+    "..##..",
+    ".####.",
+    "######",
+    "######",
+    ".####.",
+    "..##.."
+   ],
+   "empty": [
+    "..##..",
+    ".#..#.",
+    "#....#",
+    "#....#",
+    ".#..#.",
+    "..##.."
+   ]
+  }
+ },
+ "midi2_title": {
+  "at": 1311028,
+  "from_title": 2,
+  "columns": [
+   55,
+   75
+  ],
+  "glyph": {
+   "rows": [
+    ".###.",
+    "#...#",
+    "....#",
+    "...#.",
+    "..#..",
+    ".#...",
+    "#####"
+   ],
+   "x": 77,
+   "y": 3
+  }
+ }
+}

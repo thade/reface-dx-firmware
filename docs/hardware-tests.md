@@ -51,7 +51,7 @@ Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `
 
 Built and emulation-verified (`tools/verify_menu.py` and `tools/verify_ui.py`:
 the real parameter setter, the real UI event path from the FUNCTION button
-to the flash save, and the rendered screen). **Flashed and verified on hardware 2026-10-20, see Record.**  Read MENU_RE.md §8 for what the patch changes before
+to the flash save, and the rendered screen). **Flashed and verified on hardware 2026-10-20, see Record.**  Read menu-internals.md §8 for what the patch changes before
 running it.  The app is `updater/clockmenu/reface updater.app` (payload
 SHA-256 `c5ea5147…f709`).  The 2026-10-20 reviews and emulation found and
 fixed six problems in earlier builds (clamped setting, clamped page index,

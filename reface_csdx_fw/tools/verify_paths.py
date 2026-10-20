@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Emulation of the two paths that reach settings byte 0x15 without the UI:
 the boot-time NV load and SysEx reception.  Stock image as control in every
-case (see MENU_RE.md sections 2.3, 8 and 9).
+case (see docs/menu-internals.md sections 2.3, 8 and 9).
 
   boot      an NV image (magic, SYSTEM shadow with byte 0x15 = 1, group
             0x784000 shadow) is placed at flash 0x02200000 and the real boot
@@ -25,7 +25,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import ui_sim, verify_menu as vm, patch_clock_menu as pm
 from unicorn.arm_const import *
 
-# ---- boot NV load (MENU_RE section 9) --------------------------------------
+# ---- boot NV load (docs/menu-internals.md section 9) --------------------------------------
 NV_FLASH, NV_RAM, NV_SIZE = 0x02200000, 0x04000000, 0x1800
 MAGIC = 0xDEADFACE
 NV_SYSTEM, NV_GROUP78, NV_VOICE = 0x1500, 0x1600, 0x100
@@ -115,7 +115,7 @@ def test_boot(stock, img, P):
                         % (name, what, len(b.writes), b.live()[0x15], b.writes[0][NV_SYSTEM + 0x15] if b.writes else -1))
     return ok
 
-# ---- SysEx reception (MENU_RE section 2.3) ---------------------------------
+# ---- SysEx reception (docs/menu-internals.md section 2.3) ---------------------------------
 HDR = bytes([0xF0, 0x43])
 def param_change(addr, value, dev=0):
     return HDR + bytes([0x10 | dev, 0x7F, 0x1C, 0x05]) + bytes(addr) + bytes([value, 0xF7])

@@ -1,0 +1,24 @@
+{
+ "format": 1,
+ "version": "no-clock",
+ "title": "Clock always off",
+ "built_from": "reface CS/DX updater v1.30",
+ "stock_sha256": "645309bef54e9444ebdeeacaa42f727b0fd0bdcfc06992ca1adde30a16112abb",
+ "stock_image_sha256": "993f2b1308ccfa24e2db4cec4da796e571fe3c75f7aac8b4905d9d76170d25cd",
+ "image_size": 1966080,
+ "image_sha256": "dbc1e2d67c2594c381a87a65ea1fc20c795c49f13ad9ac1a5414f604957539ec",
+ "payload_sha256": "af1d24539c2f064c192a0d2bc86c06bbfefdcabc1486b5bcefe9379817ce4799",
+ "payload_size": 2250052,
+ "smf": {
+  "ppqn": 480,
+  "tempo_us": 500000,
+  "block_delta": 1309
+ },
+ "ops": [
+  [
+   "put",
+   136286,
+   "RsBGwA=="
+  ]
+ ]
+}

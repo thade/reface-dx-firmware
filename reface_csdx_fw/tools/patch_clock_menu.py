@@ -10,7 +10,7 @@ off, anything else (0 from the firmware's own default-fill, 0xFF from erased
 flash) = clock on.  So the unit behaves exactly like stock until the user
 turns the clock off, and no normalisation step is needed.
 
-How the firmware works (verified against v1.30, see MENU_RE.md):
+How the firmware works (verified against v1.30, see docs/menu-internals.md):
   * FUNCTION pages are 20-byte records {u8 columns, 3 pad, be32 layout,
     be32 key_handler, be32 static_draw, be32 value_draw} in shared RAM at
     0x04011020, copied at boot from ROM 0x13D9D8.  The group descriptor
