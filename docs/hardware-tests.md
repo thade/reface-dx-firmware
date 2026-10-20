@@ -17,7 +17,7 @@ Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `
 
 ## Before you start
 
-- [ ] reface DX on its AC adaptor, not USB power. Yamaha's guide insists on this.
+- [ ] reface DX on its AC adaptor. Yamaha's guide insists on this.
 - [ ] Direct USB cable to the Mac, no hub. Close every other MIDI app (DAW, MIDI monitor, Soundmondo, Reface Capture) so nothing else grabs the port.
 - [ ] Mac on power, sleep disabled for the session (`caffeinate -d` in a terminal is enough).
 - [ ] Note current firmware: hold the lowest key (C2) at power-on; v1.30 lights the LOOPER REC lamp (per forum reports). Or check the FUNCTION screen if it shows a version.
