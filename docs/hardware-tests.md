@@ -11,9 +11,9 @@ Three re-signed copies of Yamaha's updater live under `reface_csdx_fw/updater/`
 | `updater/orig/.../reface updater.app` | untouched Yamaha app | recovery |
 
 Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `1702d694…5709`
-(the hardware-tested clockmenu payload was `c5ea5147…f709`; see the Record for what changed).
+(flashed 2026-10-20; the full Phase 3 steps ran on an earlier build, see the Record).
 
-**Result: both phases passed on 2026-10-19. See Record at the bottom.**
+**Result: Phases 1 and 2 passed on 2026-10-19, Phases 3 and 3b on 2026-10-20. See Record at the bottom.**
 
 ## Before you start
 
@@ -58,11 +58,11 @@ SHA-256 `1702d694…5709`).  The 2026-10-20 reviews and emulation found and
 fixed six problems in earlier builds (clamped setting, clamped page index,
 wrong key id, trailer checksum, dropped store, frozen Voice page layout);
 do not flash any clockmenu payload with a hash other than the one pinned
-in `tools/selftest.py`.  The payload flashed on 2026-10-20 was
-`c5ea5147…f709`; the current one differs from it in two halfwords of the
-key handler (the push and pop around the setter call now include r4, so
-the stack stays 8-byte aligned at the call) and has passed the three
-emulation suites but has not been flashed.
+in `tools/selftest.py`.  The current payload differs from the Phase 3b
+payload `c5ea5147…f709` in two halfwords of the key handler (the push and
+pop around the setter call now include r4, so the stack stays 8-byte
+aligned at the call).  It passes the three emulation suites and was
+flashed on 2026-10-20; see the Record for what was checked on it.
 
 Semantics: settings byte 0x15 is a CLOCK-OFF flag.  1 = clock off, anything
 else = clock on.  The firmware's own default-fill writes 0, so the unit
@@ -151,4 +151,11 @@ Write the outcome of each phase here with the display text and MIDI monitor obse
 - Payload `1702d694…5709`, 2026-10-20: built after a review found the key handler called the parameter setter
   with the stack 4-byte aligned (push {r3,lr} then push {r2}); the push and pop now include r4. Two halfwords
   differ from `c5ea5147…f709`, trailer lanes and byte-sum still equal stock, verify_menu, verify_ui and
-  verify_paths all pass. Not flashed on hardware yet.
+  verify_paths all pass. Flashed on 2026-10-20.
+  Clock receive with CLOCK off: the Mac sent 0xF8 at 100 BPM to the DX over USB (mido), 800 clocks in 20 s and
+  then 1,200 in 30 s. The DX sent no F8 back (only note messages from keys played), and during the 30 s run the
+  Looper tempo showed EXT (user-confirmed). So CLOCK off stops the DX's own clock and the DX still follows an
+  external one. This matches the code: the receive handler 0x0203DADC and the Looper's EXT check read the sync
+  mode, not byte 0x15, and an emulation of receive with byte 0x15 = 0 and 1 gave the same result. Before this
+  test, EXT had been seen only with CLOCK on in the user's own setup; the cause there was not determined.
+  Phase 3 steps 4-7 were not re-run on this payload.
