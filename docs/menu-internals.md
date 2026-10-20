@@ -41,7 +41,7 @@ change`) talks to the panel-scan Cortex-M3 (`sys_scanmicom.c`).
 (proven: every FUNCTION value draw reads `[0x041480A0 + param]` directly,
 e.g. MIDI page value draw 0x02047D8C reads +0, +1, +0x0E, +0x06).
 
-Ground truth from the Data List (references/reface_en_dl_b0.pdf):
+Ground truth from the Data List (see [references.md](references.md)):
 
 | addr | DX meaning | CS meaning |
 |---|---|---|

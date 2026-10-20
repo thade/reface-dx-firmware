@@ -30,7 +30,6 @@ docs/menu-internals.md             FUNCTION menu / parameter system / LCD / pers
 docs/writeup.md                    narrative summary of the findings
 docs/hardware-tests.md             hardware test procedure and record
 reface_csdx_fw/
-  UpdaterGuide_en.pdf              Yamaha's official update procedure
   tools/refacefw.py                extract / repack / roundtrip the updater SMF (byte-identical)
   tools/find_realtime.py           locate MIDI real-time senders in the image (capstone, BE Thumb)
   tools/patch_clock.py             apply the no-clock patch and build a patched updater SMF
@@ -45,7 +44,7 @@ reface_csdx_fw/
   tools/make_updaters.sh           run every check, then build re-signed stock / no-clock / clock-menu updater apps
   out/                             (git-ignored) decoded image and patched payloads
   updater/                         (git-ignored) the zip, orig/, stock/, noclock/, clockmenu/ app copies
-references/                        Yamaha manuals: Data List, Owner's, Reference, v1.30 Supplementary
+docs/references.md                 where to get Yamaha's manuals and updater guide
 ```
 
 Hardware test procedure: see [hardware-tests.md](hardware-tests.md). Narrative summary of findings: [writeup.md](writeup.md). FUNCTION menu / parameter system / LCD reverse-engineering notes: [menu-internals.md](menu-internals.md).
