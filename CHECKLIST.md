@@ -51,7 +51,7 @@ Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `
 
 Built and emulation-verified (`tools/verify_menu.py` and `tools/verify_ui.py`:
 the real parameter setter, the real UI event path from the FUNCTION button
-to the flash save, and the rendered screen), **not yet flashed**.  Read MENU_RE.md §8 for what the patch changes before
+to the flash save, and the rendered screen). **Flashed and verified on hardware 2026-10-20, see Record.**  Read MENU_RE.md §8 for what the patch changes before
 running it.  The app is `updater/clockmenu/reface updater.app` (payload
 SHA-256 `b0e728ef…fddd`).  The 2026-10-20 reviews and emulation found and
 fixed six problems in earlier builds (clamped setting, clamped page index,
@@ -115,3 +115,20 @@ Write the outcome of each phase here with the display text and MIDI monitor obse
   Power-cycled; boots normally. 8 s listen: 0 x F8, 41 x FE (200 ms). Notes received; Looper play sent FA,
   Looper stop sent FC; no F8 at any point with the Looper running. Bootloader does not verify an image checksum
   (or the trailer covers a region the patch does not touch). USB verified; DIN not yet checked.
+- Phase 3 (MIDI 2 page, payload `b0e728ef…fddd`), 2026-10-20: transfer 3:04 via re-signed `updater/clockmenu` app,
+  DX showed "Completed. 1.30 --> 1.30 Reboot." Power-cycled; boots normally. First probe looked wrong (1 x F8 every
+  3.0 s) because an external clock at 76 BPM was driving the DX, which silences its own clock by design; with the
+  external clock stopped: 384 x F8 in 8 s (120.0 BPM), 41 x FE (196 ms), no other traffic. Steps 1-3 pass.
+  Step 4: FUNCTION cycles Voice, Tuning, MIDI, System, Job, MIDI 2 (CLOCK item). Step 5: leftmost DATA ENTRY
+  switch set CLOCK to off; probe: 0 x F8 in 8 s, 41 x FE (196 ms). The switch works.
+  Toggled back on: 384 x F8 in 8 s (120.0 BPM) immediately. Toggle works both ways.
+  Step 6 FAILED: CLOCK off, left FUNCTION via a voice-edit button, power-cycled -> 384 x F8 in 8 s (clock back on).
+  Either the save did not run on leaving FUNCTION or boot reset byte 0x15. Investigating.
+  Step 6 re-run with the SysEx dump request as the readout: CLOCK off on the panel -> live byte 0x15 = 1, 0 x F8;
+  left FUNCTION (lamp out), standby-cycled -> byte 0x15 still 1, 0 x F8 in 8 s, FE normal. Persistence works.
+  The earlier failure: both CONTROL and CLOCK reverted, so no save had run; most likely Function mode was not
+  actually exited before the power-cycle. Your own TX ch 13 / RX ch 16 / auto power-off settings were intact
+  throughout.
+  Step 7: after the power-cycle FUNCTION opens on Voice (page index is RAM state, same as stock); Voice page with a
+  POLY voice shows an empty column 3 (Part Mode layout swap intact). Phase 3 passes: the MIDI 2 CLOCK switch works,
+  persists, and the other pages behave as stock.

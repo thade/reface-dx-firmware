@@ -17,7 +17,7 @@ hardware.
   60-byte function with one caller, and the patch is a 4-byte NOP of its single
   transmit call. Flashed through Yamaha's own updater with the payload swapped:
   no 0xF8 on USB at all, Active Sensing, notes, Looper Start/Stop unchanged.
-- **Menu switch (v2): built, not yet flashed.** A second patch
+- **Menu switch (v2): flashed and verified on the DX (2026-10-20).** A second patch
   (`tools/patch_clock_menu.py`) adds a sixth FUNCTION page, "MIDI 2", with a
   CLOCK on/off item stored at reserved settings address 0x15 (1 = off,
   default 0 = on). Five in-place sites change (page-descriptor count byte,

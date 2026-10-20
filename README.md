@@ -285,7 +285,10 @@ the leftmost DATA ENTRY switch (key 0x12) toggles the flag through the
 real parameter engine, leaving FUNCTION saves the 32-byte block to the NV
 image and triggers the flash write, re-entering returns to page 5, and the
 deferred renderer's output is captured on a 128×64 LCD model (MENU_RE §6,
-§9).  Not yet flashed on hardware — see CHECKLIST.md Phase 3.  An earlier build of this patch (never flashed) would not have
+§9).  **Flashed and verified on hardware 2026-10-20** (CHECKLIST.md Phase 3):
+FUNCTION cycles onto MIDI 2, the leftmost DATA ENTRY switch toggles the
+clock off and on, the setting survives a standby power-cycle, and the Voice
+page keeps its poly/mono layouts.  An earlier build of this patch (never flashed) would not have
 worked: two independent reviews on 2026-10-20 found the 0x15 entry clamped
 every value to 0, the page index clamped to 4, the toggle listened on a
 key id that is not a column key, and the CLOCK bitmap sat on a sampled
@@ -320,8 +323,8 @@ checksum offset.
 
 1. ~~Checksum probe on hardware (Unknown 1)~~ done 2026-10-19: no image-level check.
 2. ~~Verify no 0xF8, Start/Stop still sent~~ done 2026-10-19 (USB).
-3. ~~Menu switch instead of permanent removal~~ implemented (MIDI 2 page,
-   `tools/patch_clock_menu.py`); hardware test pending — CHECKLIST Phase 3.
+3. ~~Menu switch instead of permanent removal~~ done 2026-10-20: MIDI 2 page
+   flashed and verified on hardware (CHECKLIST Phase 3).
 4. Optional: confirm DIN MIDI OUT matches USB on any variant.
 
 ## Sources
