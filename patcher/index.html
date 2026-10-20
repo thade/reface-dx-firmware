@@ -111,13 +111,13 @@ footer .wrap { padding-top: 20px; padding-bottom: 36px; display: grid; grid-temp
 <main class="wrap">
   <section class="row hero">
     <h1>Turn off the MIDI clock on your reface DX.</h1>
-    <p class="lead">This page turns Yamaha's own reface CS/DX firmware v1.30 into a version with a MIDI clock switch in the FUNCTION menu, right here in this browser tab, and can send it to the DX. Nothing is uploaded, and the page contains none of Yamaha's firmware.</p>
+    <p class="lead">This page makes a version of Yamaha's reface CS/DX firmware v1.30 with a MIDI clock switch in the FUNCTION menu, and sends it to the DX. It works on your computer, from Yamaha's own updater file. Nothing is uploaded, and the page contains none of Yamaha's firmware.</p>
   </section>
 
   <section class="row" id="what">
     <span class="side label">What it does</span>
     <div class="body">
-      <p class="measure">The reface DX always sends MIDI clock, and Yamaha gives no way to stop it. This firmware adds a sixth FUNCTION page, <strong>MIDI 2</strong>, with one item, <strong>CLOCK</strong>. When CLOCK is off the DX sends no clock. Everything else works as before, and the DX keeps the setting when it is switched off.</p>
+      <p class="measure">The reface DX always sends MIDI clock, and Yamaha gives no way to stop it. This firmware adds a sixth FUNCTION page, <strong>MIDI 2</strong>, with one item, <strong>CLOCK</strong>. When CLOCK is off the DX sends no clock. The DX keeps the setting when it is switched off.</p>
       <div class="lcd">MIDI 2            ◇◇◇◇◇◆
 CLOCK
  ON</div>
@@ -140,7 +140,7 @@ CLOCK
     <div class="body">
       <ul class="cols3">
         <li>This is unofficial firmware, not made or supported by Yamaha. It replaces the main firmware of your DX.</li>
-        <li>The DX's update program is never changed, so you can put Yamaha's firmware back the same way if anything goes wrong. This has been done.</li>
+        <li>The DX's update program is never changed, so Yamaha's own updater puts Yamaha's firmware back the same way. That was tried on one DX on 20 October 2026.</li>
         <li>Yamaha's licence does not allow changing its firmware without permission. Installing this is your decision and your responsibility.</li>
       </ul>
       <label class="accept"><input type="checkbox" id="accept"> I understand and accept these risks</label>
@@ -173,18 +173,18 @@ CLOCK
       </div>
 
       <div class="alert" id="wrong" hidden role="alert">
-        <h2>That isn't Yamaha's reface CS/DX updater, version 1.30.</h2>
-        <p>Nothing was made: this page only works from the exact v1.30 updater file.</p>
+        <h2>That isn't Yamaha's reface CS/DX updater v1.30.</h2>
+        <p>The page only works from that file, so nothing was made. Two common causes:</p>
         <p class="small mono" id="wrongDetail"></p>
         <ul class="list">
-          <li><strong>It's the CP/YC updater.</strong> Download the one for the <strong>reface CS/DX</strong>.</li>
-          <li><strong>The download didn't finish.</strong> Download it again and drop the new file.</li>
+          <li><strong>It is the CP/YC updater.</strong> Download the one for the <strong>reface CS/DX</strong>.</li>
+          <li><strong>The download did not finish.</strong> Download it again and drop the new file.</li>
         </ul>
       </div>
 
       <div class="alert" id="mismatch" hidden role="alert">
         <h2>Something went wrong making the file.</h2>
-        <p>The file this page made doesn't match the published one, so it hasn't been offered. Nothing has been sent anywhere. Please <a href="https://github.com/thade/reface-dx-firmware/issues">report it</a> with your browser's name and version and the line below.</p>
+        <p>The file this page made does not match the published one, so it is not offered. Please <a href="https://github.com/thade/reface-dx-firmware/issues">report it</a> with your browser's name and version and the line below.</p>
         <p class="small mono" id="mismatchDetail"></p>
       </div>
     </div>
@@ -207,7 +207,7 @@ CLOCK
     <div class="body">
       <div id="sendBox" hidden>
         <h2>Send it to the DX</h2>
-        <p class="small" style="margin: 12px 0 16px">The browser will ask permission to talk to the DX (it calls this "MIDI access"): allow it. The transfer takes about three minutes. Don't touch the DX or the cable until its display says <code>Completed</code>.</p>
+        <p class="small" style="margin: 12px 0 16px">The browser asks permission to talk to the DX, which it calls MIDI access. Allow it. The transfer takes about three minutes, and the DX or the cable must not be touched until its display says <code>Completed</code>.</p>
         <ol class="tasks" aria-live="polite">
           <li id="m1" class="now"><span class="k">a</span><span class="t">Connect <button class="button solid" id="b1" type="button" aria-label="Connect to the DX">Connect</button></span><span class="state" id="t1"></span></li>
           <li id="m2" class="wait"><span class="k">b</span><span class="t"><span>Send to <select id="port" disabled></select></span> <button class="button solid" id="b2" type="button" disabled aria-label="Send the firmware">Send</button></span>
@@ -243,7 +243,7 @@ CLOCK
 <footer>
   <div class="wrap">
     <span>Independent work, not affiliated with or endorsed by Yamaha. Yamaha and reface are trademarks of Yamaha Corporation.</span>
-    <span>This page's code is MIT licensed. It can only ever make the published files, fingerprint <span class="mono" id="footHash">…</span>.</span>
+    <span>This page's code is MIT licensed. It refuses any result other than the published file, fingerprint <span class="mono" id="footHash">…</span>.</span>
   </div>
 </footer>
 

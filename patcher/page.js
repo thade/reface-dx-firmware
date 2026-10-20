@@ -77,10 +77,10 @@ async function handle(file) {
     $('download').href = url;
     $('stockHash').textContent = `${label} · ${bytes.length.toLocaleString()} bytes · fingerprint ${short(result.stockHash)}`;
     $('sameLine').textContent = `${r.title}, checked`;
-    $('imageHash').textContent = 'Matches the published file exactly · SHA-256 ' + result.payloadHash;
+    $('imageHash').textContent = 'Matches the published file · SHA-256 ' + result.payloadHash;
     made = { ...result, recipe: r };
     layout(); show('done'); setStep(3);
-    $('status').textContent = `Done: the "${r.title}" file is ready. Next, put the DX into Update mode (step 3).`;
+    $('status').textContent = `The "${r.title}" file is ready. Put the DX into Update mode (step 3).`;
     $('install').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
     if (e instanceof PatchError && e.kind === 'stock') {
@@ -143,7 +143,7 @@ $('b1').addEventListener('click', () => step(1, async () => {
   task(1, 'Connecting…', 'now');
   flasher = await Flasher.connect();
   flasher.access.addEventListener('statechange', () => fillPorts());
-  if (!fillPorts()) throw new FlashError('absent', 'No reface found on USB. Check the cable, that the DX is in Update mode, and that no other program is using it. Then press Connect again.');
+  if (!fillPorts()) throw new FlashError('absent', 'No reface found on USB. Check the cable, that the DX is in Update mode and that no other program is using it, then press Connect again.');
   task(1, 'Connected.', 'ok');
   $('port').disabled = false; $('b2').disabled = false; task(2, undefined, 'now');
 }));
