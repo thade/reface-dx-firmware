@@ -10,7 +10,7 @@ Three re-signed copies of Yamaha's updater live under `reface_csdx_fw/updater/`
 | `updater/clockmenu/reface updater.app` | MIDI 2 page patch (`tools/patch_clock_menu.py`) | the menu switch mod |
 | `updater/orig/.../reface updater.app` | untouched Yamaha app | recovery |
 
-Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `8b7a197d…bb23`.
+Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `b0e728ef…fddd`.
 
 **Result: both phases passed on 2026-10-19. See Record at the bottom.**
 
@@ -53,10 +53,10 @@ Built and emulation-verified (`tools/verify_menu.py` and `tools/verify_ui.py`:
 the real parameter setter, the real UI event path from the FUNCTION button
 to the flash save, and the rendered screen), **not yet flashed**.  Read MENU_RE.md §8 for what the patch changes before
 running it.  The app is `updater/clockmenu/reface updater.app` (payload
-SHA-256 `8b7a197d…bb23`).  The 2026-10-20 reviews found and fixed four
-blockers in the earlier build (clamped setting, clamped page index, wrong
-key id, trailer checksum); do not flash any clockmenu payload with a
-different hash.
+SHA-256 `b0e728ef…fddd`).  The 2026-10-20 reviews and emulation found and
+fixed six problems in earlier builds (clamped setting, clamped page index,
+wrong key id, trailer checksum, dropped store, frozen Voice page layout);
+do not flash any clockmenu payload with a different hash.
 
 Semantics: settings byte 0x15 is a CLOCK-OFF flag.  1 = clock off, anything
 else = clock on.  The firmware's own default-fill writes 0, so the unit
@@ -75,13 +75,9 @@ behaves like stock until you turn the clock off.
 5. Toggle it with the **leftmost DATA ENTRY switch** (the one that toggles
    AUTO P.OFF on the System page).  MIDI monitor: F8 stops immediately (FE
    Active Sensing continues).  Toggle again: F8 resumes.
-   **Expected to fail on builds up to and including `63a7154c…c847`:**
-   emulation of the firmware's store receiver (MENU_RE §2.3,
-   `verify_ui.py` "store receiver") shows the toggle's parameter message is
-   dropped — the value should stay ON and F8 should keep running, with no
-   flash write.  If that is what you see, it confirms the emulation; the
-   fix is a synchronous store in the page-5 key handler.  Each toggle goes
-   through the stock parameter setter, so the monitor may also show a short
+   Each toggle goes through the stock parameter setter and then stores the
+   byte directly (the firmware's own store path ignores address 0x15), so
+   the monitor may also show a short
    Yamaha SysEx parameter change for system address 0x15, the same thing
    the MIDI page does for CONTROL / LOCAL; that is expected, not a fault.
 6. Set CLOCK off, then **leave FUNCTION** (press any other panel button,
@@ -92,11 +88,9 @@ behaves like stock until you turn the clock off.
    FUNCTION screen loses the change, exactly as for any stock setting.
 7. Regression pass: the other five pages draw and work as before; voice
    edits, Looper Start/Stop, notes all normal.
-   - Known deviation to confirm: select a POLY voice and open the Voice
-     page.  Stock leaves column 3 empty; the patched build is expected to
-     show Portamento Time there (page-0 layout frozen on the mono layout,
-     MENU_RE §8).  Check that a MONO voice shows the same four items as
-     stock and that editing still works in both modes.
+   - Voice page: with a POLY voice column 3 must be empty, with a MONO
+     voice it must show Portamento Time, exactly as stock (an earlier build
+     broke this; the fix is verified by emulation, MENU_RE §8).
    - Leave FUNCTION while on MIDI 2 and re-enter: it should come back on
      MIDI 2 (the page-index parameter now allows 5).
 8. If anything misbehaves, reflash `updater/stock` or `updater/orig` — the

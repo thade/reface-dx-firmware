@@ -132,7 +132,10 @@ assumed for the SSP2. Evidence:
 - The bulk of the code is Thumb-1 read as big-endian halfwords. Example at
   file offset 0x730: `push {lr}; ldr r3,[pc,#0x18]; movs r2,#0x5a; movs r1,#0x20;
   str r2,[r3]; str r1,[r3,#4]`.
-- Link/load base is **0x02020000** (RAM; a boot ROM copies the image there).
+- Link/load base is **0x02020000**. This is the program flash itself (XIP):
+  the updater writes the image there, the settings image lives in the next
+  sector at 0x02200000 through a flash driver, and the 16 MB SDRAM is at
+  0x04000000. So free "ROM" in the image is not writable at run time.
   With that base, 896 big-endian words point exactly at string starts and
   694 of 863 odd-valued pointers into the image land on Thumb function
   prologues. No other base comes close.
@@ -250,17 +253,23 @@ flag instead of removing it, giving a user-facing switch.
 `tools/patch_clock_menu.py` replaces the permanent removal with a
 user-facing setting: it adds a sixth FUNCTION page ("MIDI 2") holding one
 on/off item, CLOCK, stored at reserved settings address `0x15` and gated at
-the clock-sender call site via a small trampoline in free ROM.  Four sites
-of stock data/code change: the page-group descriptor (5→6 pages, new list
-pointer), the `bl` at 0x020415C8 → trampoline, the SYSTEM parameter entry
+the clock-sender call site via a small trampoline in free ROM.  Five sites
+of stock data/code change: the page-group descriptor's count byte (5→6; the
+record list stays the stock one in RAM), the record-address arithmetic in
+page-apply (0x0204490A → `bl` to a hook that returns our ROM record for
+page 5), the `bl` at 0x020415C8 → trampoline, the SYSTEM parameter entry
 for 0x15 (max 0→1, so the setter stops clamping it to 0) and the UI
 page-index entry (max 4→5).  Everything else is new code/data placed in the
-0xFF fill from file 0x140004.  Semantics: byte 0x15 is a CLOCK-OFF flag,
-1 = clock off, anything else = on; the firmware's own default-fill writes 0,
-so out-of-the-box behaviour matches stock until the user turns it off.
-The CLOCK item is column 0 and is toggled by the column-0 key (micom id
-0x12); the page is reached by the stock FUNCTION page cycler, which honours
-the descriptor's page count.
+0xFF fill from file 0x140004.  Keeping the stock list in RAM matters: the
+firmware rewrites the Voice page's layout on every FUNCTION entry from the
+voice's Part Mode (poly hides Portamento Time), and an earlier build that
+relocated the list froze that page on the mono layout.  Semantics: byte
+0x15 is a CLOCK-OFF flag, 1 = clock off, anything else = on; the firmware's
+own default-fill writes 0, so out-of-the-box behaviour matches stock until
+the user turns it off.  The CLOCK item is column 0 and is toggled by the
+column-0 key (micom id 0x12, the leftmost DATA ENTRY switch); the page is
+reached by the stock FUNCTION page cycler, which honours the descriptor's
+page count.
 
 The full mechanism (page records, group descriptor, layouts, parameter
 entries, LCD bitmap formats, event routing) is documented in

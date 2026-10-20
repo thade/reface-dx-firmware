@@ -15,15 +15,19 @@ Checks (see MENU_RE.md section 8):
                 also driven through the real caller 0x020415B8
   value draw    flag 1 -> OFF; anything else -> ON, at (0, 0x26)
   key handler   event 1: page param set to 5
-                event 3: key id 0x12 toggles the flag + refresh; others ignored
+                event 3: key id 0x12 toggles the flag through the setter AND
+                stores the byte directly (the 0x0B store handler drops
+                addresses > 0x13) + refresh; others ignored
   dispatcher    the master dispatcher 0x02044CB4 with a real key event routes
                 id 0x12 to our handler on page 5 (control: stock MIDI page, 0x14)
   real setter   registrar + hook installer + the REAL 0x0204564C: on the patched
                 image 0x15 accepts 1 and 0 and param 0x00800005 accepts 5; on
                 the stock image both are clamped (the bug the data patches fix)
-  page apply    boot-copied descriptor lands at RAM 0x04011084 with 6 pages;
-                0x020448CC with page 5 selects our record; page 2 on the stock
-                image selects the stock MIDI record (control)
+  page apply    boot-copied descriptor lands at RAM 0x04011084 with 6 pages and
+                the stock RAM list; 0x020448CC with page 5 selects our ROM record
+                through the record hook, pages 0-4 the stock RAM records
+  Part Mode     0x0204636C still rewrites page 0's layout (poly/mono) and page
+                apply sees it, on stock and patched alike
   page cycler   0x02044960 advances 4 -> 5 (our record) -> wraps to 0
   checksums     sampled trailer lanes and 8-bit byte-sum equal the stock image
 
@@ -93,7 +97,8 @@ class Emu:
             self.calls.append((name, args, cap(uc) if cap else None))
             uc.reg_write(UC_ARM_REG_R0, ret)
         elif addr in self.traces:
-            self.calls.append((self.traces[addr], tuple(uc.reg_read(r) for r in R), None))
+            name, cap = self.traces[addr]
+            self.calls.append((name, tuple(uc.reg_read(r) for r in R), cap(uc) if cap else None))
 
     def call(self, addr, *args, max_insns=50000, must_return=True):
         """Run addr(*args) until it returns to the sentinel.  Returns r0, or
@@ -215,24 +220,27 @@ def test_key_handler(img, P):
     print("key handler")
     ok = True
     K = P["key handler"]
+    stored = {}
     def run(event, r1=0, data=None, flag=1):
         e = Emu(img); e.stub(pm.SET_PARAM, "set"); e.stub(pm.REFRESH, "refresh")
         e.w8(pm.SETTINGS + pm.CLOCK_FLAG, flag)
         ev = RAM_BASE + 0x2000
         if data: e.uc.mem_write(ev, bytes(data))
         e.call(K, event, r1, ev if data else 0)
+        stored["flag"] = e.uc.mem_read(pm.SETTINGS + pm.CLOCK_FLAG, 1)[0]
         return [c[1][:3] for c in e.named("set")], len(e.named("refresh"))
     for flag in (0, 1, 0xFF):
         sets, _ = run(1, flag=flag)
         ok &= check(sets == [(pm.PAGE_PARAM, 1, pm.OUR_PAGE)], "event 1, flag %#x -> set%s (no normalisation)" % (flag, sets))
     for flag, want in ((0, (0x15, 1, 1)), (1, (0x15, 1, 0)), (0xFF, (0x15, 1, 1))):
         sets, refr = run(3, 8, [2, pm.OUR_KEY_ID], flag=flag)
-        ok &= check(sets == [want] and refr == 1, "event 3 key %#x press, flag %#x -> set%s + refresh" % (pm.OUR_KEY_ID, flag, sets))
+        ok &= check(sets == [want] and refr == 1 and stored["flag"] == want[2],
+                    "event 3 key %#x press, flag %#x -> set%s + direct store (byte now %#x) + refresh" % (pm.OUR_KEY_ID, flag, sets, stored["flag"]))
     for desc, args in (("key 0x14 (column 2)", (3, 8, [2, 0x14])), ("key 0x17", (3, 8, [2, 0x17])),
                        ("release (byte 3)", (3, 8, [3, pm.OUR_KEY_ID])),
                        ("r1 != 8", (3, 2, [2, pm.OUR_KEY_ID])), ("event 0", (0,)), ("event 2", (2,))):
         sets, refr = run(*args)
-        ok &= check(sets == [] and refr == 0, "%s -> ignored" % desc)
+        ok &= check(sets == [] and refr == 0 and stored["flag"] == 1, "%s -> ignored, byte untouched" % desc)
     return ok
 
 def boot_copy(e):
@@ -254,16 +262,41 @@ def test_page_apply(stock, img, P):
                 "control: stock image, page 2 -> RAM record %#x with the stock MIDI key handler" % rec)
     e = Emu(img); boot_copy(e)
     desc = e.uc.mem_read(0x04011084, 8)
-    ok &= check(desc == bytes([6, 0, 0, 0]) + struct.pack(">I", P["page list"]),
-                "boot copy: RAM 0x04011084 = {6, %#x}" % P["page list"])
+    ok &= check(desc == bytes([6, 0, 0, 0]) + struct.pack(">I", 0x04011020),
+                "boot copy: RAM 0x04011084 = {6, stock RAM list 0x04011020}")
     e, rec = run(img, 5)
-    want = P["page list"] + 5 * 0x14
-    ok &= check(rec == want, "page 5 -> our record %#x" % rec)
+    want = P["page 5 record"]
+    ok &= check(rec == want, "page 5 -> our ROM record %#x (via the record hook)" % rec)
     ok &= check(e.r32(rec + 8) == P["key handler"] | 1 and len(e.named("dispatch")) == 1,
                 "our record's key handler is ours and the event dispatcher ran")
     e, rec = run(img, 2)
-    ok &= check(e.r32(rec + 8) == 0x02046131, "page 2 on patched image still reaches the stock MIDI key handler")
+    ok &= check(rec == 0x04011020 + 2 * 0x14 and e.r32(rec + 8) == 0x02046131,
+                "page 2 on patched image -> stock RAM record with the MIDI key handler")
+    for pg in range(5):
+        e, rec = run(img, pg)
+        ok &= check(rec == 0x04011020 + pg * 0x14, "page %d -> stock RAM record %#x" % (pg, rec))
     return ok
+
+PARTMODE_SWAP = 0x0204636C      # FUNCTION-entry bookkeeping: picks page 0's layout from Part Mode
+VOICE_COMMON  = 0x041480C4      # voice-common shadow; +0xD = Part Mode (0 poly, 1/2 mono)
+LAYOUT_POLY, LAYOUT_MONO = 0x020C4098, 0x020C40D8
+
+def test_partmode_swap(stock, img, P):
+    print("Part Mode layout swap still reaches the Voice page")
+    ok = True
+    for name, image in (("stock", stock), ("patched", img)):
+        for mode, want in ((0, LAYOUT_POLY), (1, LAYOUT_MONO), (2, LAYOUT_MONO)):
+            e = Emu(image); boot_copy(e)
+            e.stub(KEY_GUIDE, "guide"); e.stub(EVT_DISPATCH, "dispatch"); e.stub(APPLY_DRAW, "draw")
+            e.w8(VOICE_COMMON + 0xD, mode)
+            e.call(PARTMODE_SWAP)                       # what FUNCTION entry does first
+            e.w8(M_STATE + 3, 0); e.w8(M_STATE + 6, 1); e.w8(M_STATE + 4, 0)
+            e.call(PAGE_APPLY)                          # then page 0 is applied
+            rec = e.r32(M_STATE + 0x14); lay = e.r32(rec + 4)
+            ok &= check(rec == 0x04011020 and lay == want,
+                        "%s: Part Mode %d -> page 0 record %#x layout %#x (%s)" % (name, mode, rec, lay, "poly" if want == LAYOUT_POLY else "mono"))
+    return ok
+
 
 def apply_page(e, page):
     """Simulate FUNCTION entry: boot copy, context = RAM descriptor, then page-apply."""
@@ -287,7 +320,7 @@ def test_dispatcher(stock, img, P):
     sets, rec = run(stock, 2, 0x14)
     ok &= check(sets == [(0x0E, 1, 1)] and rec == 0x04011020 + 2 * 0x14,
                 "control: stock MIDI page, key 0x14 -> set(0x0E,1,1) [MIDI control]; page unchanged")
-    ours = P["page list"] + 5 * 0x14
+    ours = P["page 5 record"]
     sets, rec = run(img, 5, pm.OUR_KEY_ID)
     ok &= check(sets == [(0x15, 1, 1)] and rec == ours, "ours: page 5, key 0x12 -> set(0x15,1,1); page unchanged")
     sets, rec = run(img, 5, 0x14)
@@ -305,7 +338,7 @@ def test_cycler(stock, img, P):
     e = Emu(img); e.stub(EVT_DISPATCH, "dispatch"); e.stub(APPLY_DRAW, "draw"); e.stub(KEY_GUIDE, "guide")
     apply_page(e, 4)
     e.call(PAGE_CYCLE)
-    ours = P["page list"] + 5 * 0x14
+    ours = P["page 5 record"]
     ok &= check(e.uc.mem_read(M_STATE + 7, 1)[0] == 5 and e.r32(M_STATE + 0x14) == ours,
                 "patched: page 4 -> 5, record is ours")
     e.call(PAGE_CYCLE)
@@ -369,7 +402,7 @@ def main(argv):
     P = placements(report)
     results = [f(img, P) for f in (test_static_draw, test_label_walk, test_trampoline, test_value_draw, test_key_handler)]
     results.append(test_page_apply(stock, img, P))
-    for f in (test_dispatcher, test_cycler, test_real_setter, test_checksums):
+    for f in (test_partmode_swap, test_dispatcher, test_cycler, test_real_setter, test_checksums):
         results.append(f(stock, img, P))
     print("\nALL OK" if all(results) else "\nFAILURES")
     return 0 if all(results) else 1

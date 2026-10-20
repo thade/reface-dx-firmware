@@ -15,7 +15,7 @@ import refacefw, patch_clock, patch_clock_menu
 EXPECT = {
     "stock payload":     "645309bef54e9444ebdeeacaa42f727b0fd0bdcfc06992ca1adde30a16112abb",
     "noclock payload":   "af1d24539c2f064c192a0d2bc86c06bbfefdcabc1486b5bcefe9379817ce4799",
-    "clockmenu payload": "8b7a197ddab4ae6b13a0b1057ea2e2df8971f2c8e9351c43640d82e066cbbb23",
+    "clockmenu payload": "b0e728ef80a7f5c2a98064269631bcbeacc9fab63b9f2288404b24e83c32fddd",
 }
 
 def sha(b): return hashlib.sha256(b).hexdigest()

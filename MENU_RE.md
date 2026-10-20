@@ -177,7 +177,7 @@ effect on hardware (value stays ON, F8 keeps running, nothing becomes
 dirty, so no flash write).  The 0x0080 (UI) group is the exception: when
 hook [1] returns 1 the setter stores it synchronously via 0x0204359C at
 0x020455C8.  A fix therefore has to make the page-5 key handler store
-0x15 itself (e.g. call 0x0204359C(0x000015, v) before/after the setter,
+0x15 itself (it now does, with a direct `strb` after the setter call,
 which still posts the message for the SysEx-out side effect) — the table
 bound is a `cmp` immediate and cannot be extended in place.
 
@@ -448,16 +448,18 @@ sampled checksum offset and is left alone), placed in order: CLOCK label
 bitmap (32×52 1bpp, "CLOC"/"K" in the stock font style with the left rule),
 label list, layout (row `{0,0,0x15,·,4}` + three 0x83 rows), key handler,
 static draw (MIDI title icon + our label list), value draw (ON unless the
-flag is 1), clock trampoline, 6-record page list (five stock records +
-ours), and one byte-sum pad.  All functions are assembled by a small
+flag is 1), clock trampoline, the page-apply record hook, our page-5
+record (20 bytes), and one byte-sum pad.  The stock five-record list stays
+in RAM so the Part Mode layout swap (§3.1) keeps working.  All functions are assembled by a small
 big-endian Thumb-1 assembler in the script (push/pop, movs, ldr-literal,
 ldrb, cmp, b±cond, bl, bx) and verified by disassembly.
 
-In-place patches (4 sites):
+In-place patches (5 sites):
 
 | file offset | stock | patched | effect |
 |---|---|---|---|
-| 0x13DA3C | `{05, 0, 0, 0, 0x04011020}` | `{06, 0, 0, 0, <new list>}` | FUNCTION group has 6 pages, records read from the new list (boot-copied to RAM 0x04011084 exactly as before) |
+| 0x13DA3C | `{05, 0, 0, 0, 0x04011020}` | `{06, 0, 0, 0, 0x04011020}` | FUNCTION group has 6 pages; the record list is still the stock one in RAM (boot-copied to RAM 0x04011084 exactly as before) |
+| 0x2490A | `lsls r3,r3,#2; adds r3,r2,r3` | `bl rechook` | page-apply 0x020448CC computes `record = list + page*20`; the hook does the same and returns our ROM record when page == 5 (the only site with this arithmetic) |
 | 0x215C8 | `bl 0x02041438` | `bl trampoline` | clock send gated on settings[0x15] |
 | 0x97188 | SYSTEM entry 0x15 `{0,0,0,0,0}` | `{0,0,0,1,0}` | setter accepts 0 and 1 for byte 0x15 (stock clamps to 0) |
 | 0x96BA4 | UI entry 5 max `4` | `5` | page-index parameter accepts 5 |
@@ -465,7 +467,9 @@ In-place patches (4 sites):
 New page record: `{01 (one column), layout, key, static, value}`.  Key
 handler: event 1 asserts page param 5; event 3 with `[evt]==2,
 [evt+1]==0x12` (column-0 key) sets `0x0204564C(0x000015, 1, flag==1 ? 0 : 1)`
-+ refresh, exactly like the stock MIDI page does for 0x0E/0x06 on 0x14/0x15.
+like the stock MIDI page does for 0x0E/0x06 on 0x14/0x15, **then stores the
+byte directly** (`strb` into 0x041480A0+0x15) because the type-0x0B store
+handler 0x0203A65C only applies addresses ≤ 0x13 (§2.3), then refreshes.
 Trampoline: `bx lr` when the flag is 1, else `push {r4,lr}; bl 0x02041438;
 pop {r4}; pop {r3}; bx r3` (r0 tick argument preserved, stack stays
 8-aligned — the caller never reads r0/r3 after the call).
@@ -515,8 +519,14 @@ control cases:
   posts value 1 on the patched image; `(0x15,1,0)` posts 0; `(0x15,1,2)`
   clamps to 1; `(0x00800005,1,5)` stores 4 on stock and 5 on patched
 * page-apply 0x020448CC after a simulated boot copy, M[4]=5: M[0x14] lands
-  on our record and the event dispatcher runs; page 2 still reaches the
-  stock MIDI record; control = stock image, page 2
+  on our ROM record through the record hook and the event dispatcher runs;
+  pages 0–4 still resolve to the stock RAM records; control = stock image,
+  page 2
+* Part Mode swap 0x0204636C then page-apply page 0: Part Mode 0 → poly
+  layout 0x020C4098, 1/2 → mono layout 0x020C40D8, identical on stock and
+  patched
+* key handler event 3 also stores the byte directly (checked after the
+  stubbed setter returns); ignored events leave it untouched
 * page cycler 0x02044960: stock 4 → 0; patched 4 → 5 (our record) → 0
 * boot copy: patched descriptor lands at RAM 0x04011084 as {6, new list}
 * checksums: sampled lanes and byte-sum equal stock; 0x140000..3 untouched
@@ -579,13 +589,15 @@ stock image as control:
 
 ### Known limitations / open questions
 
-* **BLOCKER (2026-10-20, emulation): the toggle never reaches the settings
-  block.**  The setter posts the change as a message and the receiver stores
-  SYSTEM parameters only for addresses 0x00–0x13 (§2.3).  On hardware the
-  CLOCK item will stay ON and F8 will keep running.  The page-5 key handler
-  must store byte 0x15 itself (0x0204359C) in addition to calling the
-  setter.  Byte 0x15 is likewise not writable by SysEx parameter change or
-  bulk dump (stock behaviour; the bulk dump *transmits* it).
+* **Resolved (2026-10-20): the setter alone never reached the settings
+  block.**  It posts the change as a message and the receiver 0x0203A65C
+  stores SYSTEM parameters only for addresses 0x00–0x13 (§2.3), so an
+  earlier build's toggle would have been dropped on hardware.  The page-5
+  key handler now stores byte 0x15 directly after the setter call;
+  `verify_ui.py` runs the real receiver and sees the byte change.  Byte 0x15
+  is still not settable by SysEx parameter change or bulk restore (stock
+  dispatch tables stop at 0x13; the bulk dump *transmits* it) — accepted,
+  the switch is a panel setting.
 * **Which physical control sends id 0x12**: the leftmost DATA ENTRY switch
   (column 0; the Owner's Manual uses it to toggle AUTO P.OFF on the System
   page).  Confirmed by emulation of the real key routing; hardware check
@@ -594,14 +606,13 @@ stock image as control:
 * **Persistence of byte 0x15**: traced (§9) and emulated — saved with the
   whole block when leaving FUNCTION, restored at boot.  Hardware check:
   toggle, leave FUNCTION, power-cycle.
-* **Voice page layout is frozen on the mono layout**: the runtime page-0
-  layout swap (§3.1) writes RAM 0x04011024 by Part Mode, but the patched
-  descriptor points at a list in free ROM that this write never touches, so
-  page 0 always uses 0x020C40D8.  In a POLY voice the Voice page will show
-  (and allow editing) Portamento Time in column 3 where stock shows an empty
-  column.  A fix that keeps the records in RAM is preferable to repointing
-  the literal at file 0x26398 into free ROM, since the firmware would then
-  write into a region that may be flash; CHECKLIST Phase 3 checks it.
+* **Resolved (2026-10-20): Voice page layout.**  An earlier build relocated
+  the page list into free ROM, which froze page 0 on the mono layout because
+  the Part Mode swap (§3.1) writes RAM 0x04011024.  The list now stays in
+  RAM and page 5 is substituted by the page-apply hook; `verify_menu.py`
+  shows Part Mode 0/1/2 selecting the poly/mono layout on the patched image
+  exactly as on stock.  Free ROM is flash (XIP), so repointing the swap's
+  literal into it was never an option.
 * The page-6 value draw paints only column 0; the renderer clears the
   frame on every page change (§6), so columns 1–3 are blank — verified on
   the emulated LCD arriving from the Job page.  The title bar reuses the

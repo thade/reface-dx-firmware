@@ -20,9 +20,11 @@ hardware.
 - **Menu switch (v2): built, not yet flashed.** A second patch
   (`tools/patch_clock_menu.py`) adds a sixth FUNCTION page, "MIDI 2", with a
   CLOCK on/off item stored at reserved settings address 0x15 (1 = off,
-  default 0 = on). Four in-place sites change (page descriptor, one `bl`,
-  two parameter-table words to lift clamps); everything else is new code in
-  free ROM. Two independent reviews on 2026-10-20 found the first build
+  default 0 = on). Five in-place sites change (page-descriptor count byte,
+  a `bl` hook where page-apply computes the record address, the clock
+  sender's `bl`, two parameter-table words to lift clamps); everything else
+  is new code in free ROM, and the stock page list stays in RAM so the
+  Voice page's poly/mono layout switch keeps working. Two independent reviews on 2026-10-20 found the first build
   would not have worked (setting clamped to 0, wrong key id, trailer
   checksum broken); the fixed build is verified by emulating the real
   parameter engine, key dispatcher and page cycler. See MENU_RE.md.

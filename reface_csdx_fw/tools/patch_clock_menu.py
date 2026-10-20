@@ -15,8 +15,16 @@ How the firmware works (verified against v1.30, see MENU_RE.md):
     be32 key_handler, be32 static_draw, be32 value_draw} in shared RAM at
     0x04011020, copied at boot from ROM 0x13D9D8.  The group descriptor
     {u8 count, u8 current, u16 pad, be32 list} at ROM 0x13DA3C -> RAM
-    0x04011084 selects them: record = list + page*0x14.  The page cycler
-    0x02044960 honours the count byte, so a sixth page is reachable.
+    0x04011084 selects them: page-apply 0x020448CC computes record = list +
+    page*0x14 at 0x02044906..0x0204490C (the only such site).  The page
+    cycler 0x02044960 honours the count byte, so a sixth page is reachable.
+  * The stock list must stay in RAM: on every FUNCTION entry 0x0204636C
+    rewrites record 0's layout pointer (RAM 0x04011024) from the voice's
+    Part Mode (poly hides Portamento Time).  So instead of relocating the
+    list we keep it, bump the count to 6, and hook the record computation:
+    the two halfwords `lsls r3,r3,#2; adds r3,r2,r3` become `bl rechook`,
+    which does the same arithmetic and substitutes our ROM record when the
+    page is 5.
   * A page's layout is 16-byte rows {addr_hi, addr_mid, addr_lo, pad, type,...};
     row bytes 0..2 are the 24-bit SysEx parameter address, 0x83 marks an
     empty column.  Type 4 is an on/off switch.
@@ -25,6 +33,11 @@ How the firmware works (verified against v1.30, see MENU_RE.md):
     clamps to [min, max].  Stock entry 0x15 is all zero (min = max = 0), so it
     must be patched to max 1 before the flag can be set.  The page-index
     parameter 0x00800005 has max 4 and is raised to 5.
+  * The setter does not store SYSTEM bytes itself: it posts a type-0x0B
+    message that the MIDI task's handler 0x0203A65C applies -- but only for
+    addresses <= 0x13.  Our key handler therefore stores byte 0x15 directly
+    after calling the setter (the call is kept for the stock MIDI
+    transmit-on-change behaviour).
   * Key events: master dispatcher 0x02044CB4 forwards event 3 to the page's
     key handler; micom key ids 0x12-0x15 are the four column keys (id - 0x12
     = column).  CLOCK is column 0, so our toggle key is 0x12.
@@ -32,7 +45,8 @@ How the firmware works (verified against v1.30, see MENU_RE.md):
     0x020415C8 inside 0x020415B8, when not following external clock.
 
 Patch sites (file offsets):
-  0x13DA3C  group descriptor {5, RAM list}   -> {6, new list in free ROM}
+  0x13DA3C  group descriptor count byte      5 -> 6 (list pointer unchanged)
+  0x2490A   page-apply record arithmetic     -> bl rechook (page 5 -> our record)
   0x215C8   bl clock sender                  -> bl trampoline (checks the flag)
   0x97188   SYSTEM entry 0x15 {0,0,0,0,0}    -> {0,0,0,1,0}   (max 1)
   0x96BA4   UI entry 5 max                   4 -> 5           (page index)
@@ -72,6 +86,8 @@ CLOCK_SEND = 0x02041438           # transmit one MIDI clock tick burst
 ROM_LIST   = 0x13D9D8             # file offset of the five page records
 ROM_DESC   = 0x13DA3C             # file offset of the FUNCTION group descriptor
 CLOCK_BL   = 0x215C8              # file offset of `bl CLOCK_SEND`
+REC_HOOK   = 0x2490A              # file offset of `lsls r3,r3,#2; adds r3,r2,r3` in page-apply
+RAM_LIST   = 0x04011020           # the stock five records, boot-copied into RAM
 SYS_ENTRIES= 0x96FE4              # file offset of the SYSTEM per-parameter entries (32 x 20 bytes)
 UI_ENTRIES = 0x96B34              # file offset of the 0x0080 UI-group entries (44 x 20 bytes)
 ENTRY_15   = SYS_ENTRIES + CLOCK_FLAG * 20   # 0x97188
@@ -110,7 +126,14 @@ class Asm:
     def ldrb(self, rt, rn, imm=0):
         assert 0 <= imm <= 31
         self._h(0x7800 | (imm << 6) | (rn << 3) | rt)
+    def strb(self, rt, rn, imm=0):
+        assert 0 <= imm <= 31
+        self._h(0x7000 | (imm << 6) | (rn << 3) | rt)
     def cmp(self, rd, imm): self._h(0x2800 | (rd << 8) | imm)
+    def lsls(self, rd, rm, imm):
+        assert 0 < imm < 32
+        self._h(0x0000 | (imm << 6) | (rm << 3) | rd)
+    def add3(self, rd, rn, rm): self._h(0x1800 | (rm << 6) | (rn << 3) | rd)
     def b(self, tgt, cond=None):
         kinds = {None: 0xE0, "eq": 0xD0, "ne": 0xD1, "hi": 0xD8, "lo": 0xD3,
                  "ge": 0xDA, "lt": 0xDB, "gt": 0xDC, "le": 0xDD}
@@ -206,6 +229,7 @@ def patch(img):
     off = (((h1 & 0x7FF) << 12) | ((h2 & 0x7FF) << 1))
     if off & 0x400000: off -= 0x800000
     assert BASE + CLOCK_BL + 4 + off == CLOCK_SEND, "clock BL mismatch"
+    assert d[REC_HOOK-4:REC_HOOK+6] == bytes.fromhex("0083181b009b18d36163"), "page-apply record arithmetic mismatch"
     assert all(b == 0xFF for b in d[0x140000:0x140400]), "free ROM not empty"
     for r in range(5):                          # the five page records
         o = ROM_LIST + r * 20
@@ -262,8 +286,13 @@ def patch(img):
         k.movs(2, 1); k.cmp(3, 1); k.b("go", "ne")    # flag != 1 (clock on) -> set 1 (off)
         k.movs(2, 0)                                  # flag == 1 (off)      -> set 0 (on)
         k.label("go")
+        k.push([2])                                   # keep the new value across the setter
         k.ldr(0, 0x00000000 | CLOCK_FLAG); k.movs(1, 1)
-        k.bl(SET_PARAM)
+        k.bl(SET_PARAM)                               # stock path: clamp + post (MIDI tx on change)
+        k.pop([2])
+        # The 0x0B store handler 0x0203A65C only stores addresses <= 0x13, so
+        # the posted value for 0x15 is dropped there: store the byte ourselves.
+        k.ldr(3, SETTINGS); k.strb(2, 3, CLOCK_FLAG)
         k.bl(REFRESH)
         k.label("out0"); k.movs(0, 0)
         k.label("out")
@@ -302,6 +331,16 @@ def patch(img):
         t.label("nosend"); t.bx(14)
         return t.assemble()
 
+    def build_rechook(org, record):
+        # entered from page-apply with r0 = page, r2 = list, r3 = page*5
+        h = Asm(org)
+        h.lsls(3, 3, 2)                               # r3 = page*20
+        h.add3(3, 2, 3)                               # r3 = list + page*20 (stock result)
+        h.cmp(0, OUR_PAGE); h.b("done", "ne")
+        h.ldr(3, record)                              # page 5 -> our ROM record
+        h.label("done"); h.bx(14)
+        return h.assemble()
+
     def reserve(blob_len, what=""):
         # code blobs end in a 4-aligned literal pool, so they must start 4-aligned
         while cur[0] % 4:
@@ -323,26 +362,30 @@ def patch(img):
     VALA   = reserve(len(val_p))
     tram_p = build_trampoline(0)
     TRAMPA = reserve(len(tram_p))
+    hook_p = build_rechook(0, 0)
+    HOOKA  = reserve(len(hook_p))
+
+    # 6. page record (ROM; the stock five stay in RAM) --------------------------
+    record = bytes([1, 0, 0, 0]) + be32(LAYA) + be32(KEYA | 1) + be32(STAA | 1) + be32(VALA | 1)
+    RECA = alloc(record, 4, "page 5 record")
 
     keycode = build_key(KEYA);      assert len(keycode) == len(key_p)
     stcode  = build_static(STAA, LBLA); assert len(stcode) == len(sta_p)
     vcode   = build_value(VALA);    assert len(vcode) == len(val_p)
     tcode   = build_trampoline(TRAMPA); assert len(tcode) == len(tram_p)
-    place(KEYA, keycode); place(STAA, stcode); place(VALA, vcode); place(TRAMPA, tcode)
-
-    # 6. page record ----------------------------------------------------------
-    record = bytes([1, 0, 0, 0]) + be32(LAYA) + be32(KEYA | 1) + be32(STAA | 1) + be32(VALA | 1)
-    # 7. new page list: five stock records + ours
-    newlist = bytes(d[ROM_LIST:ROM_LIST + 100]) + record
-    LISTA = alloc(newlist, 4, "page list")
+    hcode   = build_rechook(HOOKA, RECA); assert len(hcode) == len(hook_p)
+    place(KEYA, keycode); place(STAA, stcode); place(VALA, vcode); place(TRAMPA, tcode); place(HOOKA, hcode)
 
     # 9. in-place patches ------------------------------------------------------
-    d[ROM_DESC:ROM_DESC+8] = bytes([6, 0, 0, 0]) + be32(LISTA)
-    off = TRAMPA - (BASE + CLOCK_BL + 4)
-    assert off % 2 == 0
-    o = off >> 1
-    d[CLOCK_BL:CLOCK_BL+2]   = be16(0xF000 | ((o >> 11) & 0x7FF))
-    d[CLOCK_BL+2:CLOCK_BL+4] = be16(0xF800 | (o & 0x7FF))
+    def put_bl(file_off, target):
+        off = target - (BASE + file_off + 4)
+        assert off % 2 == 0 and -0x400000 <= off < 0x400000, "bl out of range"
+        o = off >> 1
+        d[file_off:file_off+2]   = be16(0xF000 | ((o >> 11) & 0x7FF))
+        d[file_off+2:file_off+4] = be16(0xF800 | (o & 0x7FF))
+    d[ROM_DESC] = 6                                   # six pages; list pointer stays RAM_LIST
+    put_bl(CLOCK_BL, TRAMPA)
+    put_bl(REC_HOOK, HOOKA)
     d[ENTRY_15:ENTRY_15+20]   = be32(0) + be32(0) + be32(0) + be32(1) + be32(0)   # max 1
     d[UI_ENTRY_5+12:UI_ENTRY_5+16] = be32(5)                                       # page max 5
 
@@ -357,11 +400,12 @@ def patch(img):
     report.append("free-ROM placements:")
     for nm, a_ in (("clock label bitmap", BMPA), ("label list", LBLA),
                    ("layout", LAYA), ("key handler", KEYA), ("static draw", STAA),
-                   ("value draw", VALA), ("trampoline", TRAMPA), ("page list", LISTA),
-                   ("byte-sum pad", PADA)):
+                   ("value draw", VALA), ("trampoline", TRAMPA), ("record hook", HOOKA),
+                   ("page 5 record", RECA), ("byte-sum pad", PADA)):
         report.append("  %-20s %#08x (file %#x)" % (nm, a_, a_ - BASE))
     report.append("in-place patches:")
-    report.append("  descriptor @ %#x: {6, %#x}" % (ROM_DESC, LISTA))
+    report.append("  descriptor count @ %#x: 5 -> 6 (list stays %#x)" % (ROM_DESC, RAM_LIST))
+    report.append("  record arithmetic @ %#x -> bl record hook" % REC_HOOK)
     report.append("  clock bl @ %#x -> trampoline" % CLOCK_BL)
     report.append("  SYSTEM entry 0x15 @ %#x: max 0 -> 1" % ENTRY_15)
     report.append("  UI entry 5 @ %#x: max 4 -> 5" % UI_ENTRY_5)
@@ -371,6 +415,8 @@ def patch(img):
     report.append("\nstatic draw:\n" + dis(STAA, stcode))
     report.append("\nvalue draw:\n" + dis(VALA, vcode))
     report.append("\ntrampoline:\n" + dis(TRAMPA, tcode))
+    report.append("\nrecord hook:\n" + dis(HOOKA, hcode))
+    report.append("\npatched page-apply at 0x02044906:\n" + dis(BASE + REC_HOOK - 4, bytes(d[REC_HOOK-4:REC_HOOK+6])))
     report.append("\npatched BL at 0x020415c8:\n" + dis(BASE + CLOCK_BL, bytes(d[CLOCK_BL:CLOCK_BL+4])))
     return bytes(d), "\n".join(report)
 
