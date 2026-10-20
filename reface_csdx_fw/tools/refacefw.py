@@ -168,6 +168,33 @@ def repack(img, header=HEADER_MSG_DATA):
     out += b"MTrk" + struct.pack(">I", len(events)) + bytes(events)
     return out
 
+# ------------------------------------------------------- image trailer checks
+IMAGE_SIZE = 0x1E0000
+CHUNK = 0x80000
+
+def sampled_offsets(size=IMAGE_SIZE):
+    """File offsets covered by the firmware's sampled checksum (0x0202D744):
+    for each 512 KB chunk, the 4 bytes at chunk+0 and at chunk+2^k, k=2..18."""
+    out = []
+    for chunk in range(0, size, CHUNK):
+        for o in [0] + [1 << k for k in range(2, 19)]:
+            out.append(chunk + o)
+    return out
+
+def sampled_lanes(img):
+    """The four lane byte-sums the trailer bytes end-8..end-5 must equal."""
+    L = [0, 0, 0, 0]
+    for o in sampled_offsets(len(img)):
+        for i in range(4):
+            L[i] = (L[i] + img[o + i]) & 0xFF
+    return bytes(L)
+
+def trailer_lanes(img):
+    return bytes(img[len(img) - 8:len(img) - 4])
+
+def byte_sum(img):
+    return sum(img) & 0xFF
+
 # ----------------------------------------------------------------------- CLI
 def main(argv):
     if len(argv) < 2:

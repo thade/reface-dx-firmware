@@ -1,6 +1,6 @@
 # Hardware test checklist: reface DX no-clock firmware
 
-Two re-signed copies of Yamaha's updater live under `reface_csdx_fw/updater/`
+Three re-signed copies of Yamaha's updater live under `reface_csdx_fw/updater/`
 (built by `tools/make_updaters.sh`, git-ignored):
 
 | app | payload | purpose |
@@ -10,7 +10,7 @@ Two re-signed copies of Yamaha's updater live under `reface_csdx_fw/updater/`
 | `updater/clockmenu/reface updater.app` | MIDI 2 page patch (`tools/patch_clock_menu.py`) | the menu switch mod |
 | `updater/orig/.../reface updater.app` | untouched Yamaha app | recovery |
 
-Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `7f67dfd0…a6bf`.
+Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `8b7a197d…bb23`.
 
 **Result: both phases passed on 2026-10-19. See Record at the bottom.**
 
@@ -49,34 +49,42 @@ Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `
 
 ## Phase 3: MIDI 2 page (the menu switch)
 
-Built and emulation-verified, **not yet flashed**.  Read MENU_RE.md §8 for
-what the patch changes before running it.  The app is
-`updater/clockmenu/reface updater.app` (payload SHA-256
-`7f67dfd0…a6bf`).
+Built and emulation-verified (`tools/verify_menu.py`, 50+ checks including the
+real parameter setter, the master key dispatcher and the page cycler),
+**not yet flashed**.  Read MENU_RE.md §8 for what the patch changes before
+running it.  The app is `updater/clockmenu/reface updater.app` (payload
+SHA-256 `8b7a197d…bb23`).  The 2026-10-20 reviews found and fixed four
+blockers in the earlier build (clamped setting, clamped page index, wrong
+key id, trailer checksum); do not flash any clockmenu payload with a
+different hash.
+
+Semantics: settings byte 0x15 is a CLOCK-OFF flag.  1 = clock off, anything
+else = clock on.  The firmware's own default-fill writes 0, so the unit
+behaves like stock until you turn the clock off.
 
 1. Same Update-mode entry (F#3 + A3 + C#4 at power-on), flash, expect the
    same display sequence and 3-ish minute transfer.
 2. First boot after flashing: the DX should behave exactly like stock
-   (clock still on — the default is "on" until you change it).
-3. FUNCTION menu: press FUNCTION repeatedly — the pages should now cycle
-   through six (Voice, Tuning, MIDI, System, Job, MIDI 2).  If cycling stops
-   at Job, try FUNCTION + keyboard keys hunting for the one that jumps to
-   MIDI 2 (quick-key id 0x17 — the exact key was not identified offline;
-   note which key worked in the Record below).
-4. On MIDI 2: title should show the MIDI icon, one item labelled "CLOCK"
-   with an OFF/ON switch graphic, value showing ON (default).
-5. Toggle it off: MIDI monitor should show F8 stop immediately (FE Active
-   Sensing continues).  Toggle on: F8 resumes.  Opening the page the first
-   time and each toggle go through the stock parameter setter, so the
-   monitor may also show a short Yamaha SysEx parameter change for system
-   address 0x15 (the same thing the MIDI page does for CONTROL / LOCAL);
-   that is expected, not a fault.  If a MIDI monitor is not
-   handy, feed the DX external clock first so its own sender is idle, then
-   check with a DAW.
+   (F8 clock present on the MIDI monitor).
+3. FUNCTION menu: step through the pages with the same control you use in
+   stock to move from Voice → Tuning → MIDI → System → Job.  The cycler
+   honours the new page count, so after Job comes **MIDI 2**, then back to
+   Voice.  Record what you pressed.
+4. On MIDI 2: title shows the MIDI icon, one item labelled "CLOCK" in
+   column 0 with an ON/OFF graphic, value ON.  Columns 1 to 3 are empty.
+   Note whether anything from the previous page is left on screen in the
+   empty columns (the value draw paints only column 0).
+5. Toggle it with the **column-0 control**, the same one that toggles the
+   first item on other pages (on the System page it toggles auto power-off).
+   MIDI monitor: F8 stops immediately (FE Active Sensing continues).  Toggle
+   again: F8 resumes.  Each toggle goes through the stock parameter setter,
+   so the monitor may also show a short Yamaha SysEx parameter change for
+   system address 0x15, the same thing the MIDI page does for CONTROL /
+   LOCAL; that is expected, not a fault.
 6. Leave FUNCTION mode, power-cycle, re-enter FUNCTION: the CLOCK setting
-   and the clock behaviour should persist.  If it does not persist, that
-   means the settings flash save skips reserved bytes — record it; the
-   toggle still works per session.
+   and the clock behaviour should persist.  If it does not persist, the
+   settings flash save skips reserved bytes — record it; the toggle still
+   works per session.
 7. Regression pass: the other five pages draw and work as before; voice
    edits, Looper Start/Stop, notes all normal.
    - Known deviation to confirm: select a POLY voice and open the Voice
@@ -84,12 +92,12 @@ what the patch changes before running it.  The app is
      show Portamento Time there (page-0 layout frozen on the mono layout,
      MENU_RE §8).  Check that a MONO voice shows the same four items as
      stock and that editing still works in both modes.
-   - The quick-key range widening also routes key id 0x16 to the Job page
-     (stock never page-jumped on 0x16).  While hunting for the 0x17 key,
-     note any key that unexpectedly jumps to Job and whether that bothers
-     normal FUNCTION use.
-8. If anything misbehaves on the MIDI pages, reflash `updater/stock` or
-   `updater/orig` — the patch only changes three code bytes plus free ROM.
+   - Leave FUNCTION while on MIDI 2 and re-enter: it should come back on
+     MIDI 2 (the page-index parameter now allows 5).
+8. If anything misbehaves, reflash `updater/stock` or `updater/orig` — the
+   patch changes four in-place sites (descriptor, one `bl`, two parameter
+   entry words) plus free ROM, and keeps both trailer checksums equal to
+   stock.
 
 ## Recovery
 

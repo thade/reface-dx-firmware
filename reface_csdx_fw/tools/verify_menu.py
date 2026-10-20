@@ -11,13 +11,21 @@ Checks (see MENU_RE.md section 8):
   label list    walked by the REAL stock routine 0x0203C254: exactly one blit,
                 bitmap == CLOCK bitmap, rect x=0 y=0x0C 32x52; the pre-fix
                 layout (bitmap at +8) is shown to blit from address 0
-  trampoline    flag 0 -> clock sender not called; 1/2/0xFF -> called, r0 kept
-  value draw    flag 0 -> OFF; nonzero -> ON, at (0, 0x26)
-  key handler   event 1: page param set to 5, flag normalised first if invalid
-                event 3: key id 0x17 toggles the flag + refresh; others ignored
+  trampoline    flag 1 -> clock sender not called; 0/2/0xFF -> called, r0 kept;
+                also driven through the real caller 0x020415B8
+  value draw    flag 1 -> OFF; anything else -> ON, at (0, 0x26)
+  key handler   event 1: page param set to 5
+                event 3: key id 0x12 toggles the flag + refresh; others ignored
+  dispatcher    the master dispatcher 0x02044CB4 with a real key event routes
+                id 0x12 to our handler on page 5 (control: stock MIDI page, 0x14)
+  real setter   registrar + hook installer + the REAL 0x0204564C: on the patched
+                image 0x15 accepts 1 and 0 and param 0x00800005 accepts 5; on
+                the stock image both are clamped (the bug the data patches fix)
   page apply    boot-copied descriptor lands at RAM 0x04011084 with 6 pages;
                 0x020448CC with page 5 selects our record; page 2 on the stock
                 image selects the stock MIDI record (control)
+  page cycler   0x02044960 advances 4 -> 5 (our record) -> wraps to 0
+  checksums     sampled trailer lanes and 8-bit byte-sum equal the stock image
 
 Usage: verify_menu.py [stock_image.bin]      (needs reface_csdx_fw/venv: unicorn, capstone)
 """
@@ -46,6 +54,15 @@ EVT_DISPATCH = 0x02045168      # called by page-apply when the record has a key 
 APPLY_DRAW   = 0x02045A2C
 KEY_GUIDE    = 0x02044848
 COPY_SRC, COPY_DST, COPY_END = 0x0215C9B8, 0x04010000, 0x040116E8   # boot copy (MENU_RE section 1)
+DISPATCHER   = 0x02044CB4      # master key-event dispatcher (event, data)
+PAGE_CYCLE   = 0x02044960      # FUNCTION page cycler, honours the descriptor count
+CLOCK_CALLER = 0x020415B8      # the only caller of the clock sender
+SYNC_GETTER  = 0x02040428      # 0 = internal clock
+CLOCK_OTHER  = 0x02041518      # other call inside CLOCK_CALLER
+REGISTRAR    = 0x020425F0      # registers parameter groups at boot (returns 1)
+HOOK_INSTALL = 0x02045988      # installs the setter's post-store hooks
+POST_MSG     = 0x02037A34      # (type, payload*) message post used by the SYSTEM store hook
+RAM_DESC     = 0x04011084
 
 R = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3]
 
@@ -55,6 +72,8 @@ class Emu:
         uc.mem_map(BASE, IMG_SIZE); uc.mem_write(BASE, img)
         uc.mem_map(RAM_BASE, RAM_SIZE)
         uc.mem_map(RET, 0x1000)
+        for base, size in ((0x07000000, 0x100000), (0x01000000, 0x100000), (0x00000000, 0x10000)):
+            uc.mem_map(base, size)                 # peripherals / low memory touched by the real setter
         self.calls, self.stubs, self.traces = [], {}, {}
         uc.hook_add(UC_HOOK_CODE, self._hook)
 
@@ -164,7 +183,7 @@ def test_label_walk(img, P):
 def test_trampoline(img, P):
     print("trampoline")
     ok = True
-    for flag, expect in ((0, False), (1, True), (2, True), (0xFF, True)):
+    for flag, expect in ((1, False), (0, True), (2, True), (0xFF, True)):
         e = Emu(img); e.stub(pm.CLOCK_SEND, "send")
         e.w8(pm.SETTINGS + pm.CLOCK_FLAG, flag)
         e.call(P["trampoline"], 0x1234)
@@ -172,12 +191,19 @@ def test_trampoline(img, P):
         ok &= check((len(sends) == 1) == expect and all(c[1][0] == 0x1234 for c in sends),
                     "flag %#x -> sender %s%s" % (flag, "called" if sends else "not called",
                                                   ", r0 preserved" if sends else ""))
+    for flag, expect in ((1, False), (0, True)):
+        e = Emu(img); e.stub(pm.CLOCK_SEND, "send"); e.stub(SYNC_GETTER, "sync", ret=0); e.stub(CLOCK_OTHER, "other")
+        e.w8(pm.SETTINGS + pm.CLOCK_FLAG, flag)
+        e.call(CLOCK_CALLER, 0x55)
+        sends = e.named("send")
+        ok &= check((len(sends) == 1) == expect and all(c[1][0] == 0x55 for c in sends) and len(e.named("other")) == 1,
+                    "via real caller 0x020415B8, flag %#x -> sender %s, caller continues" % (flag, "called" if sends else "not called"))
     return ok
 
 def test_value_draw(img, P):
     print("value draw")
     ok = True
-    for flag, want in ((0, 0), (1, 1), (0xFF, 1)):
+    for flag, want in ((1, 0), (0, 1), (0xFF, 1)):
         e = Emu(img); e.stub(pm.ONOFF_DRAW, "onoff")
         e.w8(pm.SETTINGS + pm.CLOCK_FLAG, flag)
         e.call(P["value draw"])
@@ -196,14 +222,14 @@ def test_key_handler(img, P):
         if data: e.uc.mem_write(ev, bytes(data))
         e.call(K, event, r1, ev if data else 0)
         return [c[1][:3] for c in e.named("set")], len(e.named("refresh"))
-    for flag, want in ((1, [(pm.PAGE_PARAM, 1, pm.OUR_PAGE)]), (0, [(pm.PAGE_PARAM, 1, pm.OUR_PAGE)]),
-                       (0xFF, [(0x15, 1, 1), (pm.PAGE_PARAM, 1, pm.OUR_PAGE)])):
+    for flag in (0, 1, 0xFF):
         sets, _ = run(1, flag=flag)
-        ok &= check(sets == want, "event 1, flag %#x -> set%s" % (flag, sets))
-    for flag, want in ((0, (0x15, 1, 1)), (1, (0x15, 1, 0)), (0xFF, (0x15, 1, 0))):
+        ok &= check(sets == [(pm.PAGE_PARAM, 1, pm.OUR_PAGE)], "event 1, flag %#x -> set%s (no normalisation)" % (flag, sets))
+    for flag, want in ((0, (0x15, 1, 1)), (1, (0x15, 1, 0)), (0xFF, (0x15, 1, 1))):
         sets, refr = run(3, 8, [2, pm.OUR_KEY_ID], flag=flag)
         ok &= check(sets == [want] and refr == 1, "event 3 key %#x press, flag %#x -> set%s + refresh" % (pm.OUR_KEY_ID, flag, sets))
-    for desc, args in (("key 0x12", (3, 8, [2, 0x12])), ("release (byte 3)", (3, 8, [3, pm.OUR_KEY_ID])),
+    for desc, args in (("key 0x14 (column 2)", (3, 8, [2, 0x14])), ("key 0x17", (3, 8, [2, 0x17])),
+                       ("release (byte 3)", (3, 8, [3, pm.OUR_KEY_ID])),
                        ("r1 != 8", (3, 2, [2, pm.OUR_KEY_ID])), ("event 0", (0,)), ("event 2", (2,))):
         sets, refr = run(*args)
         ok &= check(sets == [] and refr == 0, "%s -> ignored" % desc)
@@ -239,6 +265,103 @@ def test_page_apply(stock, img, P):
     ok &= check(e.r32(rec + 8) == 0x02046131, "page 2 on patched image still reaches the stock MIDI key handler")
     return ok
 
+def apply_page(e, page):
+    """Simulate FUNCTION entry: boot copy, context = RAM descriptor, then page-apply."""
+    boot_copy(e)
+    e.w8(M_STATE + 3, 0); e.w8(M_STATE + 6, 1)
+    e.w32(M_STATE + 0xC, RAM_DESC)
+    e.w8(M_STATE + 4, page)
+    e.call(PAGE_APPLY)
+
+def test_dispatcher(stock, img, P):
+    print("master dispatcher 0x02044CB4 with real key events")
+    ok = True
+    def run(image, page, key_id):
+        e = Emu(image)
+        e.stub(APPLY_DRAW, "draw"); e.stub(KEY_GUIDE, "guide")
+        apply_page(e, page)
+        e.stub(pm.SET_PARAM, "set"); e.stub(pm.REFRESH, "refresh")
+        ev = RAM_BASE + 0x2000; e.uc.mem_write(ev, bytes([2, key_id]))
+        e.call(DISPATCHER, 8, ev)
+        return [c[1][:3] for c in e.named("set")], e.r32(M_STATE + 0x14)
+    sets, rec = run(stock, 2, 0x14)
+    ok &= check(sets == [(0x0E, 1, 1)] and rec == 0x04011020 + 2 * 0x14,
+                "control: stock MIDI page, key 0x14 -> set(0x0E,1,1) [MIDI control]; page unchanged")
+    ours = P["page list"] + 5 * 0x14
+    sets, rec = run(img, 5, pm.OUR_KEY_ID)
+    ok &= check(sets == [(0x15, 1, 1)] and rec == ours, "ours: page 5, key 0x12 -> set(0x15,1,1); page unchanged")
+    sets, rec = run(img, 5, 0x14)
+    ok &= check(sets == [] and rec == ours, "ours: page 5, key 0x14 -> nothing set; page unchanged")
+    sets, rec = run(img, 2, 0x14)
+    ok &= check(sets == [(0x0E, 1, 1)], "patched image, MIDI page, key 0x14 still toggles MIDI control")
+    return ok
+
+def test_cycler(stock, img, P):
+    print("page cycler 0x02044960")
+    ok = True
+    e = Emu(stock); e.stub(EVT_DISPATCH, "dispatch"); e.stub(APPLY_DRAW, "draw"); e.stub(KEY_GUIDE, "guide")
+    apply_page(e, 4); e.call(PAGE_CYCLE)
+    ok &= check(e.uc.mem_read(M_STATE + 7, 1)[0] == 0, "control: stock image, page 4 -> wraps to 0 (5 pages)")
+    e = Emu(img); e.stub(EVT_DISPATCH, "dispatch"); e.stub(APPLY_DRAW, "draw"); e.stub(KEY_GUIDE, "guide")
+    apply_page(e, 4)
+    e.call(PAGE_CYCLE)
+    ours = P["page list"] + 5 * 0x14
+    ok &= check(e.uc.mem_read(M_STATE + 7, 1)[0] == 5 and e.r32(M_STATE + 0x14) == ours,
+                "patched: page 4 -> 5, record is ours")
+    e.call(PAGE_CYCLE)
+    ok &= check(e.uc.mem_read(M_STATE + 7, 1)[0] == 0, "patched: page 5 -> wraps to 0")
+    return ok
+
+def payload_capture(uc):
+    return bytes(uc.mem_read(uc.reg_read(UC_ARM_REG_R1), 8))
+
+def test_real_setter(stock, img, P):
+    print("real parameter setter 0x0204564C (registrar + hooks first)")
+    ok = True
+    def run(image, param, value, pre=0):
+        e = Emu(image); boot_copy(e)
+        e.stub(POST_MSG, "post", ret=1, capture=payload_capture)
+        assert e.call(REGISTRAR, max_insns=2000000) == 1, "registrar failed"
+        e.call(HOOK_INSTALL)
+        where = pm.SETTINGS + param if param < 0x20 else S_STATE + (param & 0xFF)
+        e.w8(where, pre)
+        e.call(pm.SET_PARAM, param, 1, value, max_insns=400000)
+        posts = [c[2] for c in e.named("post")]
+        return posts, e.uc.mem_read(where, 1)[0]
+    posts, _ = run(stock, 0x0E, 1)
+    ok &= check(len(posts) == 1 and posts[0][:4] == bytes([0, 0, 0x0E, 1]),
+                "control: stock set(0x0E,1,1) posts value 1 -> %s" % (posts[0].hex() if posts else None))
+    posts, _ = run(stock, 0x15, 1)
+    ok &= check(posts == [], "stock set(0x15,1,1) from 0: clamped to 0, nothing posted (the bug)")
+    posts, _ = run(img, 0x15, 1)
+    ok &= check(len(posts) == 1 and posts[0][:4] == bytes([0, 0, 0x15, 1]),
+                "patched set(0x15,1,1) from 0 posts value 1 -> %s" % (posts[0].hex() if posts else None))
+    posts, _ = run(img, 0x15, 0, pre=1)
+    ok &= check(len(posts) == 1 and posts[0][:4] == bytes([0, 0, 0x15, 0]),
+                "patched set(0x15,1,0) from 1 posts value 0 -> %s" % (posts[0].hex() if posts else None))
+    posts, _ = run(img, 0x15, 2)
+    ok &= check(len(posts) == 1 and posts[0][3] == 1, "patched set(0x15,1,2) clamps to max 1")
+    _, got = run(stock, pm.PAGE_PARAM, 5, pre=2)
+    ok &= check(got == 4, "stock set(page,5) stores %d (clamped to 4: the bug)" % got)
+    _, got = run(img, pm.PAGE_PARAM, 5, pre=2)
+    ok &= check(got == 5, "patched set(page,5) stores %d" % got)
+    _, got = run(img, pm.PAGE_PARAM, 2, pre=5)
+    ok &= check(got == 2, "patched set(page,2) stores %d" % got)
+    return ok
+
+def test_checksums(stock, img, P):
+    print("trailer checksums")
+    import refacefw
+    ok = True
+    ok &= check(refacefw.sampled_lanes(stock) == refacefw.trailer_lanes(stock),
+                "stock: sampled lanes == trailer bytes %s" % refacefw.trailer_lanes(stock).hex())
+    ok &= check(refacefw.sampled_lanes(img) == refacefw.trailer_lanes(img) == refacefw.sampled_lanes(stock),
+                "patched: sampled lanes unchanged %s" % refacefw.sampled_lanes(img).hex())
+    ok &= check(refacefw.byte_sum(img) == refacefw.byte_sum(stock),
+                "patched: 8-bit byte-sum unchanged %#04x" % refacefw.byte_sum(img))
+    ok &= check(bytes(img[0x140000:0x140004]) == b"\xff" * 4, "file 0x140000..3 (sampled) untouched")
+    return ok
+
 def main(argv):
     path = argv[1] if len(argv) > 1 else os.path.join(HERE, "..", "out", "reface_csdx_main_v130.bin")
     stock = open(path, "rb").read()
@@ -246,6 +369,8 @@ def main(argv):
     P = placements(report)
     results = [f(img, P) for f in (test_static_draw, test_label_walk, test_trampoline, test_value_draw, test_key_handler)]
     results.append(test_page_apply(stock, img, P))
+    for f in (test_dispatcher, test_cycler, test_real_setter, test_checksums):
+        results.append(f(stock, img, P))
     print("\nALL OK" if all(results) else "\nFAILURES")
     return 0 if all(results) else 1
 

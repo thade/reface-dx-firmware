@@ -19,8 +19,13 @@ hardware.
   no 0xF8 on USB at all, Active Sensing, notes, Looper Start/Stop unchanged.
 - **Menu switch (v2): built, not yet flashed.** A second patch
   (`tools/patch_clock_menu.py`) adds a sixth FUNCTION page, "MIDI 2", with a
-  CLOCK on/off item stored at reserved settings address 0x15; only three
-  sites of stock code change (descriptor, one `cmp`, one `bl`). Verified by emulation; see MENU_RE.md.
+  CLOCK on/off item stored at reserved settings address 0x15 (1 = off,
+  default 0 = on). Four in-place sites change (page descriptor, one `bl`,
+  two parameter-table words to lift clamps); everything else is new code in
+  free ROM. Two independent reviews on 2026-10-20 found the first build
+  would not have worked (setting clamped to 0, wrong key id, trailer
+  checksum broken); the fixed build is verified by emulating the real
+  parameter engine, key dispatcher and page cycler. See MENU_RE.md.
 - **CP firmware on a DX: no.** Different Yamaha chip (SWX08 vs SSP2),
   different board, and the CP needs a 64 MB sample ROM the DX does not have.
   The only physically possible swap is CS firmware on a DX, and that is the
@@ -66,10 +71,12 @@ at power-on).
 - One unified CS/DX binary (both model strings, both engines' source paths).
 - No encryption or compression. Source file paths for about 80 modules are
   compiled in, which made the MIDI code easy to locate.
-- Eight bytes after the build stamp look like a checksum but match no common
-  algorithm over any obvious range. The bootloader accepted the patched image
-  without complaint, so whatever they are, they are not enforced against this
-  patch.
+- Eight bytes after the build stamp are two checksums: four lane byte-sums
+  over sampled offsets of each 512 KB chunk (reproduced exactly, see
+  README), and the image's 8-bit byte-sum. The no-clock patch leaves the
+  sampled lanes intact and the unit accepted its changed byte-sum, so the
+  byte-sum is not enforced at boot; whether the lane check is enforced is
+  unknown, so the menu patch keeps both equal to stock.
 
 `tools/refacefw.py` extracts the image and rebuilds the SMF byte-identically
 from it (verified with `roundtrip`).

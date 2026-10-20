@@ -11,7 +11,7 @@ ZIP=updater/reface_updater_CSDX_v130-3_mac.zip
 EXPECT_ZIP=291e5836af25d39e536ec2fd3d8cf82905edfce6d0d86692023656d9697889c2
 EXPECT_DAT=645309bef54e9444ebdeeacaa42f727b0fd0bdcfc06992ca1adde30a16112abb
 EXPECT_NOCLOCK=af1d24539c2f064c192a0d2bc86c06bbfefdcabc1486b5bcefe9379817ce4799
-EXPECT_CLOCKMENU=7f67dfd0247784e5d42b70d40d3082ed83e3e92682428a1e2fa0b251602ca6bf
+EXPECT_CLOCKMENU=8b7a197ddab4ae6b13a0b1057ea2e2df8971f2c8e9351c43640d82e066cbbb23
 APP="reface updater.app"
 DAT="$APP/Contents/Resources/reface updater.dat"
 
@@ -59,4 +59,4 @@ echo "stock   payload must equal $EXPECT_DAT"
 echo "noclock payload differs from stock in 6 bytes:"
 cmp -l "updater/stock/$DAT" "updater/noclock/$DAT" || true
 echo "clockmenu payload adds the MIDI 2 page (new code in free ROM):"
-cmp -l "updater/stock/$DAT" "updater/clockmenu/$DAT" | wc -l
+{ cmp -l "updater/stock/$DAT" "updater/clockmenu/$DAT" || true; } | wc -l

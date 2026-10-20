@@ -90,27 +90,57 @@ worker 0x020431BC computes `storage = buf + (addr − base)·stride` and memcpys
 — **no per-entry validation**, so all 32 SYSTEM addresses 00–1F are readable
 and writable through the parameter engine.
 
-The SYSTEM entries table at 0x020B6FE4 (32 be32 words) is mostly zero; the
-nonzero words (params 00, 03, 06, 08, 0B, 0D, 0E, 12, 13, 17, 18, 1C, 1D, 1F)
-look like per-param maxima/format hints.  Zero-entry params are fully
-functional: 01 (RX ch), 0A (contrast), 0C (auto power-off) all have zero
-entries and are menu-settable.  Param 0x15 has a zero entry.
+The per-parameter **entries** tables are arrays of 20-byte records, one per
+parameter in the group (the engine indexes them by `param*20` at 0x020436C4,
+and the tables are exactly `count*20` apart):
+
+```
++0x00 be32  attribute pointer (0 for simple parameters)
++0x04 be32  default
++0x08 be32  min
++0x0C be32  max
++0x10 be32  type (s8)
+```
+
+The setter clamps every write to `[min, max]` (0x0204228C, called from
+0x02043684).  SYSTEM entries (table at 0x020B6FE4, file 0x96FE4):
+`01` RX ch `{0,0x10,0,0x10,0}`, `0A` contrast `{0,0x20,0,0x3F,0}`, `0C`
+auto power-off `{0,1,0,1,0}`, `0E` MIDI control `{0,0,0,1,0}`, `07`
+transpose `{0,0x40,0x34,0x4C,0}`, `08` tempo `{0,120,30,300,1}`.
+**Entry 0x15 is all zero, so min = max = 0: through the setter the byte can
+only ever be 0.**  The patch therefore raises its max to 1 (file 0x97188
++0xC).  "Reserved" does not mean unused everywhere: the init path at
+0x02042A00–0x02042A1C writes +0x12/+0x13/+0x14 and they have non-zero
+entries; 0x15 has none and appears genuinely unused.  The default-fill
+routine 0x02042A24 (called from the init sequence) writes each entry's
+default into the block, so a never-touched 0x15 reads 0, not 0xFF.
+
+The UI group (0x0080, table 0x020B6B34) entry 5 is the FUNCTION page index
+with `{0,0,0,4,0}`: a sixth page needs max 5 (file 0x96BA4).
 
 ### 2.3 Setter chain
 
 ```
 0x0204564C(param_addr, op, value)      op 1 = absolute set (page handlers)
   -> 0x02045544                         argument shuffle + stack descriptor
-    -> 0x020436FC                       engine: find group, clamp, copy,
-                                        run post-set hooks (redraw, MIDI
-                                        transmit-on-change, dirty flags)
+    -> 0x02043684                       compute: old via the type getter
+                                        0x02042C0C, new via the clamp
+                                        0x0204228C -> 2-word result
+    then: 0x0080-group params are stored synchronously by 0x0204359C
+          (0x020455BC tests (param>>16)&0xFF == 0x80); other groups go
+          through the hooks installed by 0x02045988 at 0x041121B8:
+          [1] = 0x02045875 posts a type-0x0B message {addr(3), new, 0, old…}
+          via 0x02037A34 (the store happens when it is processed),
+          [2] = 0x020458C5.  Nothing is posted when old == new.
 ```
 
 Page key handlers call it as `0x0204564C(0x00000E, 1, v)` etc.  The generic
-panel-switch edit path 0x02044B78 calls it with op=2 and a param address
-assembled from the focused layout row (§6.3) — but only for layout rows
-whose type byte is 1 or 3 (numeric); **type-4 switches are toggled by key
-events instead**.
+panel-switch edit path 0x02044B78 (event 9, the data-entry slider) edits the
+item at `[event+2]` with op=2 — but only for layout rows whose type byte is
+1 or 3 (numeric); **type-4 switches are toggled by key events instead**.
+`verify_menu.py` runs the registrar 0x020425F0 and 0x02045988 and then the
+real setter to prove the clamps above (stock: `set(0x15,1,1)` posts nothing;
+patched: posts value 1).
 
 ## 3. FUNCTION pages
 
@@ -121,15 +151,14 @@ Tuning "added", MIDI/System/Job moved to 3/4/5):
 
 | page | content | ROM record | key handler | static draw | value draw | layout | label list |
 |---|---|---|---|---|---|---|---|
-| 0 | Voice parameter | 0x13D9D8 | 0x02046198 | 0x020479C0 | 0x020479D4 | 0x020C40D8 | pool+0x70 |
+| 0 | Voice parameter | 0x13D9D8 | 0x02046198 | 0x02047BCC | 0x02047BF0 | 0x020C40D8 (mono) / 0x020C4098 (poly) | pool+0x70 |
 | 1 | Tuning (M.TUNE/M.TP) | 0x13D9EC | 0x020462E4 | 0x02047CB4 | 0x02047CD8 | 0x020C4118 | pool+0x30 |
 | 2 | MIDI | 0x13DA00 | 0x02046130 | 0x02047D68 | 0x02047D8C | 0x020C4158 | pool+0x20 |
 | 3 | System | 0x13DA14 | 0x020461F4 | 0x02047DC4 | 0x02047DEC* | 0x020C4198 | pool+0x60 |
-| 4 | Job | 0x13DA28 | (0x02045E9C†) | 0x02047E3C | 0x02047E60* | 0x020C41D8 | pool+0x60? |
+| 4 | Job | 0x13DA28 | 0x02045E9C | 0x02047E3C | 0x02047E60* | 0x020C41D8 | pool+0x60? |
 
-\* adjacent, from record words. † the page-4 record's key handler is
-0x02047305 by record; 0x02045E9C is the handler that sets the page param to 4
-on entry.
+\* adjacent, from record words.  (0x02047305 is the micom pump, not a page
+handler.)
 
 Page record (20 bytes):
 
@@ -179,38 +208,40 @@ list  = [entry + 4]              ; the group descriptor's list field
 page  = M[4]
 record = list + page*0x14
 M[0x10] = entry ; M[0x14] = record
-if record.key: record.key(0,0,0)     ; "page became active" event 0
-redraw (0x02045A2C: static+value draws via M[0x14]), key guide (0x02044848)
+if record.key: 0x02045168(0,0,0)     ; dispatcher -> record.key, event 0
+0x02045A2C (stores M[7] as a halfword, not a draw), key guide (0x02044848)
 ```
 
 Emulating 0x020448CC with M[0xC]=0x04011084, M[4]=2 lands M[0x14] at exactly
 the MIDI page record and calls 0x02046130 (verified with unicorn before and
 after patching; see §8).  This is the mechanism the patch rides on.
 
-### 3.3 Page selection — who moves the page
+### 3.3 Page selection and the column keys
 
-* `0x02044B60(page)` — writes `[0x0414815C+5]` then refreshes.  Only two
-  callers: 0x02044B78 and 0x02044BD0.
-* `0x02044BD0(key_id)` — `page = id − 0x12`; reached from the master
-  dispatcher's event-8 branch (0x02044D50) for micom key ids
-  **0x12–0x15 → pages 0–3**.  These are the "quick access" keys: the event
-  is *also* forwarded as event 3 to the (new) current page's key handler,
-  which toggles the corresponding column item — FUNCTION+key-0x14 jumps to
-  the MIDI page *and* flips MIDI Control, etc.
-* `0x02044B78(event)` — event 9 ("page change"): page = `[event+2]`.
+* **Micom key ids 0x12–0x15 are the four column keys**, not page jumps.
+  0x02044BD0(id) computes `id − 0x12` and 0x02044B60 stores it in **M[5]**
+  (literal 0x0411216C), the item cursor; page-apply copies M[5] to M[8] and
+  0x0204457C turns it into the focused layout row `layout + 16*M[8]`
+  (clamped to `record[0]−1`, stored at M+0x18).  The same event is also
+  forwarded as event 3 to the current page's key handler, which is where the
+  stock handlers toggle *by column*: MIDI page id 0x14 → 0x0E (CONTROL,
+  column 2), 0x15 → 0x06 (LOCAL, column 3); System page 0x12/0x13/0x14 →
+  0x0C/0x0D/0x0B; Voice page 0x13 → Part Mode (column 1).  Our CLOCK item is
+  column 0, so its key id is **0x12**.
+* **Page cycling** is 0x02044960: `count = [M[0x10]]` (the descriptor's
+  count byte), `if M[7] >= count−1: M[4] = 0 else M[4] = M[7]+1`, then
+  M[5] = 0 and page-apply.  Reached from the cursor-key handler 0x02044B1C
+  for key id 0x10 (when `[0x0411216C] == 8`) or 0x0B (when it is 7).  It
+  honours the patched count of 6, so page 5 is reachable: emulated 4 → 5 →
+  0 (`verify_menu.py`).
+* `0x02044B78(event)` — event 9 is the data-entry slider edit of the item at
+  `[event+2]`, not a page change.
 * Param **0x00800005**: the page index *is* a parameter — the 0x0080 group's
   RAM buffer is 0x0414815C, so param 5 == `[0x0414815C+5]`.  Every page's key
   handler re-asserts its own page through `0x0204564C(0x00800005, 1, own)`
-  on event 1.
-* Cursor keys: ids 0x0B/0x10 → 0x02044B1C (moves the item focus, mode
-  dependent).
-
-**Not found anywhere in the main image**: an increment-and-wrap of the page
-(searched every `[rX,#5]` load + `adds #1` site — zero hits).  The Owner's
-Manual says repeated FUNCTION presses cycle pages, so the cycling either
-arrives as event 9 with a page computed elsewhere (panel MCU?) or through a
-path we did not locate.  Open question; the patch does not depend on it
-(reachability comes from the extended quick-key range, §7).
+  on event 1; on FUNCTION entry 0x020463CC copies S[5] into the descriptor's
+  current-page byte and 0x02044C84 loads it into M[4].  Its entry has
+  max 4 in stock, hence the UI-entry patch.
 
 ### 3.4 Master event flow
 
@@ -243,7 +274,7 @@ One 16-byte row per column, 4 columns:
 ```
 
 * Focus resolution: 0x0204457C — clamps cursor to `record[0]-1`, stores the
-  focused row at `[0x0414815C+0x18]`; 0x02044C34 returns the focused type.
+  focused row at `M+0x18` (0x04112184); 0x02044C34 returns the focused type.
 * Numeric edit: 0x02044B78 — builds the param address from row bytes 0–2,
   calls the setter with op=2 (types 1/3 only).
 * The SYSTEM page uses `{00 83 83 00 04}` rows for its two "button" columns
@@ -259,15 +290,14 @@ M = 0x0411216C (master): +3 target slot, +4 page-in-group, +6 applied slot,
 +0x10 applied entry, +0x14 current page record pointer.
 
 S = 0x0414815C (== 0x0080-group buffer, 44 bytes): +5 current page
-(= param 0x00800005), +0xD model/link flag read by draws, +0x14 current
-record (mirror used by refresh 0x0204479C), +0x18 focused layout row.
+(= param 0x00800005), +0xD model/link flag read by draws.
 
-Refresh after a toggle: `0x0204479C` → draws `[M/S+0x14]+0xC` (static) and
-`+0x10` (value) of the current record.
+Refresh after a toggle: `0x0204479C` → reads the current record from
+`M+0x14` and draws its `+0xC` (static) and `+0x10` (value) routines.
 
 ## 6. LCD drawing
 
-1bpp framebuffer, blit `0x020291E8(rect_struct, bitmap)`; bitmaps are
+1bpp framebuffer, blit `0x020291E8(bitmap, rect_struct)` (rect = 4 words x0,y0,x1,y1 on the stack); bitmaps are
 **1bpp, row-major, MSB-first** (32px wide = 4 bytes/row).
 
 | helper | args | what it draws |
@@ -311,82 +341,110 @@ caller is 0x020415B8:
 ## 8. The MIDI 2 page patch
 
 `tools/patch_clock_menu.py` adds page 6 "MIDI 2" with one on/off item,
-CLOCK, bound to settings byte 0x15.  Semantics: **0 = clock off, 1 = on,
-anything else treated as on and normalised to 1 when the page is first
-opened** (erased-flash 0xFF keeps stock behaviour: clock on).
+CLOCK, bound to settings byte 0x15.  Semantics: **byte 0x15 is a CLOCK-OFF
+flag: 1 = clock off, anything else = on.**  The firmware's default-fill
+writes 0 and erased flash reads 0xFF; both mean "on", so stock behaviour is
+preserved until the user toggles, and no normalisation is needed.
 
-New code/data in free ROM at 0x02160000 (file 0x140000), placed in order:
-CLOCK label bitmap (32×52 1bpp, "CLOC"/"K" in the stock font style with the
-left rule), label list, layout (row `{0,0,0x15,·,4}` + three 0x83 rows),
-key handler, static draw (MIDI title icon + our label list), value draw
-(on/off icon from the flag), 6-record page list (five stock records + ours),
-clock trampoline.  All functions are assembled by a small big-endian
-Thumb-1 assembler in the script (push/pop, movs, ldr-literal, ldrb, cmp,
-b±cond, bl, bx) and verified by disassembly.
+New code/data in free ROM from 0x02160004 (file 0x140004; 0x140000..3 is a
+sampled checksum offset and is left alone), placed in order: CLOCK label
+bitmap (32×52 1bpp, "CLOC"/"K" in the stock font style with the left rule),
+label list, layout (row `{0,0,0x15,·,4}` + three 0x83 rows), key handler,
+static draw (MIDI title icon + our label list), value draw (ON unless the
+flag is 1), clock trampoline, 6-record page list (five stock records +
+ours), and one byte-sum pad.  All functions are assembled by a small
+big-endian Thumb-1 assembler in the script (push/pop, movs, ldr-literal,
+ldrb, cmp, b±cond, bl, bx) and verified by disassembly.
 
-In-place patches (3 sites: 8-byte descriptor, 2-byte cmp, 4-byte bl):
+In-place patches (4 sites):
 
 | file offset | stock | patched | effect |
 |---|---|---|---|
 | 0x13DA3C | `{05, 0, 0, 0, 0x04011020}` | `{06, 0, 0, 0, <new list>}` | FUNCTION group has 6 pages, records read from the new list (boot-copied to RAM 0x04011084 exactly as before) |
-| 0x24D72 | `2B03` (cmp r3,#3) | `2B05` (cmp r3,#5) | quick-key ids 0x16→page 4, **0x17→page 5** |
 | 0x215C8 | `bl 0x02041438` | `bl trampoline` | clock send gated on settings[0x15] |
+| 0x97188 | SYSTEM entry 0x15 `{0,0,0,0,0}` | `{0,0,0,1,0}` | setter accepts 0 and 1 for byte 0x15 (stock clamps to 0) |
+| 0x96BA4 | UI entry 5 max `4` | `5` | page-index parameter accepts 5 |
 
 New page record: `{01 (one column), layout, key, static, value}`.  Key
-handler: event 1 normalises the flag (not 0/1 → set 1) then asserts page
-param 5; event 3 with `[evt]==2, [evt+1]==0x17` toggles
-`0x0204564C(0x00000015, 1, new)` + refresh, exactly like the stock MIDI page
-does for 0x0E/0x06.  Trampoline: `bx lr` when the flag is 0, else
-`push {lr}; bl 0x02041438; pop {r3}; bx r3` (r0 tick argument preserved —
-the caller never reads r0/r3 after the call).
+handler: event 1 asserts page param 5; event 3 with `[evt]==2,
+[evt+1]==0x12` (column-0 key) sets `0x0204564C(0x000015, 1, flag==1 ? 0 : 1)`
++ refresh, exactly like the stock MIDI page does for 0x0E/0x06 on 0x14/0x15.
+Trampoline: `bx lr` when the flag is 1, else `push {r4,lr}; bl 0x02041438;
+pop {r4}; pop {r3}; bx r3` (r0 tick argument preserved, stack stays
+8-aligned — the caller never reads r0/r3 after the call).
+
+### Trailer checksums
+
+The 8 bytes after the build stamp are `lanes(4) 42 FF 58 FF`.  0x0202D744
+sums, in four byte lanes, the 4 bytes at every 512 KB chunk base and at
+chunk + 2^k for k = 2..18 (so +4 … +0x40000); the lanes must equal the
+trailer's first four bytes (`EE 1C 3B FD`, reproduced by
+`refacefw.sampled_lanes`).  0x0202D858 checks the plain 8-bit byte-sum of
+the region; 0x0202D824 runs both.  File 0x140000 = 0x100000 + 0x40000 is a
+sampled offset, which is why the first clockmenu build (bitmap at 0x140000)
+broke the lane check.  The patch now asserts the lanes are unchanged and
+balances the byte-sum with a pad byte, so both checks give the stock values.
+The no-clock patch leaves the lanes intact but changes the byte-sum, and the
+unit booted it, so the byte-sum is not enforced at boot; the lane check has
+never been exercised on hardware.
 
 ### Verification (automated: `tools/verify_menu.py`, unicorn; `tools/selftest.py`, hashes)
 
 `selftest.py` rebuilds the stock, no-clock and clockmenu payloads from the
-stock image and checks their pinned SHA-256 (stdlib only).  `verify_menu.py`
-emulates the patched image with stock routines as control cases:
+stock image, checks their pinned SHA-256 and both trailer checksums (stdlib
+only).  `verify_menu.py` emulates the patched image with stock routines as
+control cases:
 
 * static draw: title draw called with (0, 0, MIDI icon), label draw with our
   list; control = stock MIDI page static draw 0x02047D68
 * label list: walked by the real 0x0203C254 — exactly one blit, bitmap ==
   the CLOCK bitmap, rect x=0 y=0x0C 32×52, then the terminator stops it;
   control = the stock MIDI list (3 blits, known bitmaps).  Negative control:
-  the pre-4e9eecb list (bitmap at +8, 0xFF at +20) is shown to blit from
-  address 0 and never terminate — that bug shipped in the first clockmenu
-  build and was never flashed.
-* trampoline: flag 0 → sender not executed; 1/2/0xFF → executed; r0 preserved
-* value draw: flag 0 → OFF icon arg; 1/0xFF → ON icon arg
-* key handler ev3: setter called with (0x00000015, 1, toggle); id 0x12 ignored
-* key handler ev1: `(0x00800005, 1, 5)` always; `(0x15, 1, 1)` first when the
-  stored flag is invalid
+  the original list (bitmap at +8, 0xFF at +20) blits from address 0 and
+  never terminates.
+* trampoline: flag 1 → sender not executed; 0/2/0xFF → executed, r0
+  preserved; also driven through the real caller 0x020415B8 with the sync
+  getter stubbed to 0
+* value draw: flag 1 → OFF icon arg; 0/0xFF → ON
+* key handler: event 1 → `(0x00800005, 1, 5)` only; event 3 key 0x12 →
+  `(0x15, 1, toggle)` + refresh; keys 0x14/0x17, releases, other events
+  ignored
+* master dispatcher 0x02044CB4 with a real event-8 `{2, id}` after
+  page-apply: stock MIDI page + 0x14 → `set(0x0E,1,1)` (control); our page
+  + 0x12 → `set(0x15,1,1)`; our page + 0x14 → nothing; page unchanged in all
+  cases
+* real setter: after running the registrar 0x020425F0 and hook installer
+  0x02045988, `0x0204564C(0x15,1,1)` posts nothing on stock (clamped) and
+  posts value 1 on the patched image; `(0x15,1,0)` posts 0; `(0x15,1,2)`
+  clamps to 1; `(0x00800005,1,5)` stores 4 on stock and 5 on patched
 * page-apply 0x020448CC after a simulated boot copy, M[4]=5: M[0x14] lands
-  on our record (key handler == ours) and the event dispatcher runs; page 2
-  still reaches the stock MIDI record; control = stock image, page 2
+  on our record and the event dispatcher runs; page 2 still reaches the
+  stock MIDI record; control = stock image, page 2
+* page cycler 0x02044960: stock 4 → 0; patched 4 → 5 (our record) → 0
 * boot copy: patched descriptor lands at RAM 0x04011084 as {6, new list}
+* checksums: sampled lanes and byte-sum equal stock; 0x140000..3 untouched
 
 ### Known limitations / open questions
 
-* **Which physical key sends id 0x17** in FUNCTION mode was not traced
-  (key-id translation happens through per-key ramp tables around file
-  0x6CE00–0x6DA00; ids 0x0A–0x1F all appear reachable).  On-hardware test
-  needed; FUNCTION-button cycling may also reach page 6 if it honours the
-  count byte (count consumer not identified — see §3.3).
+* **Which physical control sends id 0x12 on page 6** follows the stock
+  convention (the column-0 control, as for auto power-off on the System
+  page) but has not been confirmed on hardware.  The per-key/lamp loops at
+  0x02044620 and 0x02045150 cover 0x16 entries, suggesting ids 0x00–0x15
+  only, so ids ≥ 0x16 should not be relied on.
 * **Persistence of byte 0x15**: the SYSTEM group covers all 32 bytes, and
   the Data List's "SYSTEM Common 36 (0x24)" bulk size matches 32 data bytes
   + header, so SysEx dump/restore carries it.  The flash settings save was
-  not fully traced; the previous agent's session verified "the 32-byte
-  settings block persists through full saves/loads".  Confirm on hardware by
-  power-cycling after a toggle.
+  not fully traced.  Confirm on hardware by power-cycling after a toggle.
 * **Voice page layout is frozen on the mono layout**: the runtime page-0
   layout swap (§3.1) writes RAM 0x04011024 by Part Mode, but the patched
   descriptor points at a list in free ROM that this write never touches, so
   page 0 always uses 0x020C40D8.  In a POLY voice the Voice page will show
   (and allow editing) Portamento Time in column 3 where stock shows an empty
-  column.  Possible fix: patch the literal at file 0x26398 (0x04011020 → the
-  new list address) so the swap targets the relocated list — valid only if
-  the image region at 0x0216xxxx is writable RAM, which has not been
-  verified on hardware.  Until then this is a known, cosmetic deviation;
-  CHECKLIST Phase 3 checks it.
+  column.  A fix that keeps the records in RAM is preferable to repointing
+  the literal at file 0x26398 into free ROM, since the firmware would then
+  write into a region that may be flash; CHECKLIST Phase 3 checks it.
+* The page-6 value draw paints only column 0; whether columns 1–3 are
+  cleared of the previous page's values is not known (hardware check).
 * Panel DATA ENTRY switch editing of the type-4 item (op=2 path) is not
   wired for switches in stock firmware; the intended interaction is the
-  quick key (0x17) or the page toggle itself.
+  column-0 key or the page toggle itself.

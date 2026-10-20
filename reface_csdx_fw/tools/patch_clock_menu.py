@@ -3,38 +3,46 @@
 
 Stock v1.30 has five FUNCTION pages (Voice, Tuning, MIDI, System, Job).  This
 patch adds a sixth page, "MIDI 2", holding one on/off item labelled CLOCK that
-controls whether MIDI Timing Clock (0xF8) is transmitted.  The flag is stored
-in the system settings block at SysEx-reserved address 0x15 and persists with
-the normal settings save.  Semantics: 0 = clock off, 1 = clock on; any other
-byte (e.g. 0xFF from erased flash) is treated as on and is normalised to 1 the
-first time the page is opened.
+controls whether MIDI Timing Clock (0xF8) is transmitted.  The flag lives in
+the system settings block at SysEx-reserved address 0x15 and persists with the
+normal settings save.  Semantics: the byte is a CLOCK-OFF flag -- 1 = clock
+off, anything else (0 from the firmware's own default-fill, 0xFF from erased
+flash) = clock on.  So the unit behaves exactly like stock until the user
+turns the clock off, and no normalisation step is needed.
 
-How the firmware works (verified against v1.30, see WRITEUP.md):
+How the firmware works (verified against v1.30, see MENU_RE.md):
   * FUNCTION pages are 20-byte records {u8 columns, 3 pad, be32 layout,
     be32 key_handler, be32 static_draw, be32 value_draw} in shared RAM at
     0x04011020, copied at boot from ROM 0x13D9D8.  The group descriptor
     {u8 count, u8 current, u16 pad, be32 list} at ROM 0x13DA3C -> RAM
-    0x04011084 selects them: record = list + page*0x14.
-  * A page's layout is 16-byte rows {addr_hi, addr_mid, addr_lo, x, type,...};
-    the row bytes 0..2 are the 24-bit SysEx parameter address of the item and
-    0x83 marks an empty column.  Type 4 is an on/off switch.
-  * Settings live at RAM 0x041480A0, byte offset == SysEx address; the SYSTEM
-    group covers all 32 addresses 0x00-0x1F (0x0F-0x1F are reserved on the DX
-    and the CS uses only 0x0F/0x14 besides).
+    0x04011084 selects them: record = list + page*0x14.  The page cycler
+    0x02044960 honours the count byte, so a sixth page is reachable.
+  * A page's layout is 16-byte rows {addr_hi, addr_mid, addr_lo, pad, type,...};
+    row bytes 0..2 are the 24-bit SysEx parameter address, 0x83 marks an
+    empty column.  Type 4 is an on/off switch.
+  * Settings live at RAM 0x041480A0, byte offset == SysEx address.  Every
+    parameter has a 20-byte entry {ptr, default, min, max, type}; the setter
+    clamps to [min, max].  Stock entry 0x15 is all zero (min = max = 0), so it
+    must be patched to max 1 before the flag can be set.  The page-index
+    parameter 0x00800005 has max 4 and is raised to 5.
   * Key events: master dispatcher 0x02044CB4 forwards event 3 to the page's
-    key handler; quick-access keys with micom ids 0x12-0x15 additionally jump
-    straight to page id-0x12 (0x02044BD0).  We extend the id range to 0x17 so
-    id 0x17 jumps to the new page 5.
+    key handler; micom key ids 0x12-0x15 are the four column keys (id - 0x12
+    = column).  CLOCK is column 0, so our toggle key is 0x12.
   * The clock sender 0x02041438 is called from exactly one place,
     0x020415C8 inside 0x020415B8, when not following external clock.
 
 Patch sites (file offsets):
   0x13DA3C  group descriptor {5, RAM list}   -> {6, new list in free ROM}
-  0x24D72   quick-key range check cmp #3     -> cmp #5 (ids 0x16,0x17 -> pages 4,5)
   0x215C8   bl clock sender                  -> bl trampoline (checks the flag)
+  0x97188   SYSTEM entry 0x15 {0,0,0,0,0}    -> {0,0,0,1,0}   (max 1)
+  0x96BA4   UI entry 5 max                   4 -> 5           (page index)
 
-New code/data is placed in the 0xFF erase-fill from file 0x140000
-(address 0x02160000) onwards.  Everything is big-endian Thumb-1.
+New code/data is placed in the 0xFF erase-fill from file 0x140004 (address
+0x02160004) onwards.  File 0x140000..3 is left untouched because the
+firmware's trailer checksum samples it (refacefw.sampled_offsets); the patch
+asserts the sampled lanes are unchanged and balances the 8-bit byte-sum with
+one pad byte so both trailer checks still pass.  Everything is big-endian
+Thumb-1.
 
 Usage: patch_clock_menu.py <image.bin> <patched.bin> [<patched.mid>]
 """
@@ -48,12 +56,12 @@ except ImportError:          # verification listing only; patch works without
     md = None
 
 BASE      = 0x02020000
-FREE      = 0x02160000            # first free-ROM address (file 0x140000)
-FREE_END  = 0x02160000 + 0x20000  # generous working limit
+FREE      = 0x02160004            # first free-ROM address we use (file 0x140004)
+FREE_END  = 0x02160000 + 0x20000  # generous working limit (below the next sampled chunk)
 
 # ---- stock firmware landmarks (asserted before patching) --------------------
 SETTINGS   = 0x041480A0           # system settings block (byte == SysEx addr)
-CLOCK_FLAG = 0x15                 # reserved on both CS and DX
+CLOCK_FLAG = 0x15                 # reserved on both CS and DX; 1 = clock OFF
 SET_PARAM  = 0x0204564C           # setter(param_addr, op=1, value)
 REFRESH    = 0x0204479C           # redraw current page
 PAGE_PARAM = 0x00800005           # FUNCTION page-index parameter
@@ -63,10 +71,13 @@ ONOFF_DRAW = 0x0203C434           # (x, y, onoff_byte)
 CLOCK_SEND = 0x02041438           # transmit one MIDI clock tick burst
 ROM_LIST   = 0x13D9D8             # file offset of the five page records
 ROM_DESC   = 0x13DA3C             # file offset of the FUNCTION group descriptor
-QUICK_CMP  = 0x24D72              # file offset of `cmp r3,#3` quick-key check
 CLOCK_BL   = 0x215C8              # file offset of `bl CLOCK_SEND`
+SYS_ENTRIES= 0x96FE4              # file offset of the SYSTEM per-parameter entries (32 x 20 bytes)
+UI_ENTRIES = 0x96B34              # file offset of the 0x0080 UI-group entries (44 x 20 bytes)
+ENTRY_15   = SYS_ENTRIES + CLOCK_FLAG * 20   # 0x97188
+UI_ENTRY_5 = UI_ENTRIES + 5 * 20             # 0x96B98
 OUR_PAGE   = 5                    # new page index
-OUR_KEY_ID = 0x17                 # quick-access key id that selects it
+OUR_KEY_ID = 0x12                 # column-0 key id (ids 0x12-0x15 = columns 0-3)
 MIDI_ICON  = 2                    # title icon index 2 == the MIDI page icon
 
 def be16(v): return struct.pack(">H", v)
@@ -185,24 +196,24 @@ def make_clock_label():
 def patch(img):
     d = bytearray(img)
     assert len(d) == 0x1E0000, "unexpected image size"
+    stock_lanes, stock_sum = refacefw.sampled_lanes(d), refacefw.byte_sum(d)
+    assert stock_lanes == refacefw.trailer_lanes(d), "stock trailer lanes do not verify"
 
     # context assertions ---------------------------------------------------
     assert d[ROM_DESC:ROM_DESC+8] == bytes([5,0,0,0]) + be32(0x04011020), "descriptor mismatch"
-    assert struct.unpack_from(">H", d, QUICK_CMP)[0] == 0x2B03, "quick-key cmp mismatch"
-    bl = d[CLOCK_BL:CLOCK_BL+4]
     h1 = struct.unpack_from(">H", d, CLOCK_BL)[0]
     h2 = struct.unpack_from(">H", d, CLOCK_BL+2)[0]
     off = (((h1 & 0x7FF) << 12) | ((h2 & 0x7FF) << 1))
     if off & 0x400000: off -= 0x800000
     assert BASE + CLOCK_BL + 4 + off == CLOCK_SEND, "clock BL mismatch"
     assert all(b == 0xFF for b in d[0x140000:0x140400]), "free ROM not empty"
-    # page 0's layout pointer is rewritten at FUNCTION entry (0x0204636C) into
-    # RAM 0x04011024 by Part Mode (Voice Common 0x0D); our relocated list is
-    # not touched by that write, so page 0 stays on the ROM (mono) layout.
-    # See MENU_RE.md §3.1 and CHECKLIST Phase 3.
     for r in range(5):                          # the five page records
         o = ROM_LIST + r * 20
         assert d[o] in (1, 2, 3, 4) and d[o+1:o+4] == b"\0\0\0"
+    # parameter entries: {be32 ptr, be32 default, be32 min, be32 max, be32 type}
+    assert d[SYS_ENTRIES + 0x0E*20:SYS_ENTRIES + 0x0F*20] == be32(0)*3 + be32(1) + be32(0), "entry 0x0E mismatch"
+    assert d[ENTRY_15:ENTRY_15+20] == bytes(20), "entry 0x15 not all-zero"
+    assert d[UI_ENTRY_5:UI_ENTRY_5+20] == be32(0)*3 + be32(4) + be32(0), "UI entry 5 mismatch"
 
     # free-ROM allocator ----------------------------------------------------
     cur = [FREE]
@@ -239,27 +250,19 @@ def patch(img):
         k.cmp(0, 1);  k.b("ev1", "eq")
         k.cmp(0, 3);  k.b("ev3", "eq")
         k.movs(0, 0); k.b("out")
-        k.label("ev1")
-        # normalise flag: anything not 0/1 becomes 1 (on)
-        k.ldr(3, SETTINGS); k.ldrb(3, 3, CLOCK_FLAG)
-        k.cmp(3, 1);  k.b("norm", "hi")
-        k.b("setpage")
-        k.label("norm")
-        k.ldr(0, 0x00000015); k.movs(1, 1); k.movs(2, 1)
-        k.bl(SET_PARAM)
-        k.label("setpage")
+        k.label("ev1")                                 # page became active
         k.ldr(0, PAGE_PARAM); k.movs(1, 1); k.movs(2, OUR_PAGE)
         k.bl(SET_PARAM)
-        k.b("out")
-        k.label("ev3")
+        k.b("out0")
+        k.label("ev3")                                 # key event {press, id}
         k.cmp(1, 8);  k.b("out0", "ne")
         k.ldrb(3, 2, 0); k.cmp(3, 2); k.b("out0", "ne")
         k.ldrb(3, 2, 1); k.cmp(3, OUR_KEY_ID); k.b("out0", "ne")
         k.ldr(3, SETTINGS); k.ldrb(3, 3, CLOCK_FLAG)
-        k.movs(2, 1); k.cmp(3, 0); k.b("go", "eq")   # flag 0 (off) -> set 1
-        k.movs(2, 0)                                  # else -> set 0
+        k.movs(2, 1); k.cmp(3, 1); k.b("go", "ne")    # flag != 1 (clock on) -> set 1 (off)
+        k.movs(2, 0)                                  # flag == 1 (off)      -> set 0 (on)
         k.label("go")
-        k.ldr(0, 0x00000015); k.movs(1, 1)
+        k.ldr(0, 0x00000000 | CLOCK_FLAG); k.movs(1, 1)
         k.bl(SET_PARAM)
         k.bl(REFRESH)
         k.label("out0"); k.movs(0, 0)
@@ -281,8 +284,8 @@ def patch(img):
         v = Asm(org)
         v.push([3, 4], lr=True)
         v.ldr(3, SETTINGS); v.ldrb(4, 3, CLOCK_FLAG)
-        v.movs(2, 1); v.cmp(4, 0); v.b("draw", "ne")
-        v.movs(2, 0)
+        v.movs(2, 1); v.cmp(4, 1); v.b("draw", "ne")  # flag != 1 -> ON
+        v.movs(2, 0)                                  # flag == 1 -> OFF
         v.label("draw")
         v.movs(0, 0); v.movs(1, 0x26)
         v.bl(ONOFF_DRAW)
@@ -292,10 +295,10 @@ def patch(img):
     def build_trampoline(org):
         t = Asm(org)
         t.ldr(3, SETTINGS); t.ldrb(3, 3, CLOCK_FLAG)
-        t.cmp(3, 0); t.b("nosend", "eq")
-        t.push(lr=True)
+        t.cmp(3, 1); t.b("nosend", "eq")              # flag == 1 -> clock off
+        t.push([4], lr=True)                          # keep the stack 8-aligned
         t.bl(CLOCK_SEND)
-        t.pop([3]); t.bx(3)
+        t.pop([4]); t.pop([3]); t.bx(3)
         t.label("nosend"); t.bx(14)
         return t.assemble()
 
@@ -335,25 +338,35 @@ def patch(img):
 
     # 9. in-place patches ------------------------------------------------------
     d[ROM_DESC:ROM_DESC+8] = bytes([6, 0, 0, 0]) + be32(LISTA)
-    d[QUICK_CMP:QUICK_CMP+2] = be16(0x2B05)          # cmp r3,#5
-    # rewrite bl at CLOCK_BL to trampoline
     off = TRAMPA - (BASE + CLOCK_BL + 4)
     assert off % 2 == 0
     o = off >> 1
     d[CLOCK_BL:CLOCK_BL+2]   = be16(0xF000 | ((o >> 11) & 0x7FF))
     d[CLOCK_BL+2:CLOCK_BL+4] = be16(0xF800 | (o & 0x7FF))
+    d[ENTRY_15:ENTRY_15+20]   = be32(0) + be32(0) + be32(0) + be32(1) + be32(0)   # max 1
+    d[UI_ENTRY_5+12:UI_ENTRY_5+16] = be32(5)                                       # page max 5
+
+    # 10. trailer checksums ----------------------------------------------------
+    # The sampled lanes must be untouched (we start at 0x140004 for that);
+    # balance the 8-bit byte-sum with one pad byte in free ROM.
+    assert refacefw.sampled_lanes(d) == stock_lanes, "patch touched a sampled checksum offset"
+    PADA = alloc(bytes([(stock_sum - refacefw.byte_sum(d) + 0xFF) & 0xFF]), 1, "byte-sum pad")   # pad replaces a 0xFF byte
+    assert refacefw.byte_sum(d) == stock_sum, "byte-sum balance failed"
 
     report = []
     report.append("free-ROM placements:")
     for nm, a_ in (("clock label bitmap", BMPA), ("label list", LBLA),
                    ("layout", LAYA), ("key handler", KEYA), ("static draw", STAA),
-                   ("value draw", VALA), ("page list", LISTA), ("trampoline", TRAMPA)):
+                   ("value draw", VALA), ("trampoline", TRAMPA), ("page list", LISTA),
+                   ("byte-sum pad", PADA)):
         report.append("  %-20s %#08x (file %#x)" % (nm, a_, a_ - BASE))
     report.append("in-place patches:")
     report.append("  descriptor @ %#x: {6, %#x}" % (ROM_DESC, LISTA))
-    report.append("  quick-key cmp @ %#x: #3 -> #5" % QUICK_CMP)
     report.append("  clock bl @ %#x -> trampoline" % CLOCK_BL)
-    # verification disassembly
+    report.append("  SYSTEM entry 0x15 @ %#x: max 0 -> 1" % ENTRY_15)
+    report.append("  UI entry 5 @ %#x: max 4 -> 5" % UI_ENTRY_5)
+    report.append("trailer: sampled lanes %s unchanged, byte-sum %#04x unchanged"
+                  % (stock_lanes.hex(), stock_sum))
     report.append("\nkey handler:\n" + dis(KEYA, keycode))
     report.append("\nstatic draw:\n" + dis(STAA, stcode))
     report.append("\nvalue draw:\n" + dis(VALA, vcode))

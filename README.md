@@ -101,9 +101,18 @@ The app bundle `reface updater.app` contains one payload,
   It is one unified CS/DX binary that selects the model at runtime, consistent
   with the shared updater and shared main board.
 - Eight non-text bytes follow the build stamp
-  (`EE 1C 3B FD 42 FF 58 FF`). They look like a CRC or sum but did not match
-  CRC-32, Adler-32, CRC-16 CCITT, CRC-16 IBM, or 8/16/32-bit sums over any of the
-  obvious ranges (whole image, image minus trailer, 0x1E0000, 0x140000).
+  (`EE 1C 3B FD 42 FF 58 FF`). The first four are a **sampled checksum**
+  computed by 0x0202D744: for each 512 KB chunk of the 2 MB region it adds the
+  4 bytes at chunk+0 and at chunk+4, +8, +16, …, +0x40000 into four byte-wide
+  lanes; `refacefw.sampled_lanes` reproduces `EE 1C 3B FD` exactly. A second
+  routine (0x0202D858) checks the plain 8-bit sum of the region. Both are
+  called by 0x0202D824, which in the main image is used by the factory test
+  code; whether the bootloader runs the same checks is unknown. The no-clock
+  patch leaves the sampled lanes untouched (0x2145E is not a sampled offset)
+  but changes the byte-sum, and the unit accepted it, so the byte-sum is not
+  enforced at boot. The menu patch keeps both equal to stock anyway: it starts
+  its free-ROM data at file 0x140004 because 0x140000 (= 0x100000 + 0x40000)
+  is sampled, and balances the byte-sum with a pad byte.
 
 ## Verified: the CPU and image layout
 
@@ -124,7 +133,8 @@ assumed for the SSP2. Evidence:
   694 of 863 odd-valued pointers into the image land on Thumb function
   prologues. No other base comes close.
 - Peripheral literal-pool addresses seen: `0x0700xxxx`, `0x0101xxxx`,
-  `0x0401xxxx`, RAM data at `0x0215xxxx`.
+  `0x0401xxxx` (shared RAM). `0x0215xxxx` is inside this image (file
+  0x13xxxx: the boot-copied screen block, see MENU_RE §1).
 
 Ghidra setup: import `out/reface_csdx_main_v130.bin` as raw binary,
 language `ARM:BE:32:v5t` (or v7 if v5t rejects anything), base address
@@ -236,23 +246,31 @@ flag instead of removing it, giving a user-facing switch.
 `tools/patch_clock_menu.py` replaces the permanent removal with a
 user-facing setting: it adds a sixth FUNCTION page ("MIDI 2") holding one
 on/off item, CLOCK, stored at reserved settings address `0x15` and gated at
-the clock-sender call site via a small trampoline in free ROM.  Three sites
-of stock code change (page-group descriptor 5→6 pages with a new list pointer,
-quick-key range check `cmp #3`→`cmp #5`, and the `bl` at 0x020415C8 →
-trampoline); everything else
-is new code/data placed in the 0xFF fill from file 0x140000.  Semantics:
-0 = clock off, 1 = on, anything else (e.g. 0xFF from erased flash) = on,
-normalised to 1 the first time the page is opened — so out-of-the-box
-behaviour matches stock until the user turns it off.
+the clock-sender call site via a small trampoline in free ROM.  Four sites
+of stock data/code change: the page-group descriptor (5→6 pages, new list
+pointer), the `bl` at 0x020415C8 → trampoline, the SYSTEM parameter entry
+for 0x15 (max 0→1, so the setter stops clamping it to 0) and the UI
+page-index entry (max 4→5).  Everything else is new code/data placed in the
+0xFF fill from file 0x140004.  Semantics: byte 0x15 is a CLOCK-OFF flag,
+1 = clock off, anything else = on; the firmware's own default-fill writes 0,
+so out-of-the-box behaviour matches stock until the user turns it off.
+The CLOCK item is column 0 and is toggled by the column-0 key (micom id
+0x12); the page is reached by the stock FUNCTION page cycler, which honours
+the descriptor's page count.
 
-The full mechanism (page records, group descriptor, layouts, LCD bitmap
-formats, event routing) is documented in [MENU_RE.md](MENU_RE.md); the
-patch's new code was verified instruction-by-instruction with capstone and
-behaviorally with unicorn emulation (page-apply lands on the new record,
-the toggle drives the parameter setter, the trampoline gates the sender and
-preserves its argument).  Not yet flashed on hardware — see CHECKLIST.md
-Phase 3.
-
+The full mechanism (page records, group descriptor, layouts, parameter
+entries, LCD bitmap formats, event routing) is documented in
+[MENU_RE.md](MENU_RE.md).  The patch is verified by `tools/verify_menu.py`
+(unicorn): the generated code is driven through the real master key
+dispatcher, the real parameter setter (after running the firmware's own
+group registrar and hook installer), the real label-list walker and the
+real page cycler, with stock pages as control cases; both trailer checksums
+are checked against stock.  Not yet flashed on hardware — see CHECKLIST.md
+Phase 3.  An earlier build of this patch (never flashed) would not have
+worked: two independent reviews on 2026-10-20 found the 0x15 entry clamped
+every value to 0, the page index clamped to 4, the toggle listened on a
+key id that is not a column key, and the CLOCK bitmap sat on a sampled
+checksum offset.
 
 ## Reported (not verified here)
 
@@ -272,7 +290,9 @@ Phase 3.
 1. ~~Whether the bootloader checks the 8-byte trailer~~ Resolved: it accepted
    the patched image, so there is no image-level check that the patch trips.
 2. Exact ARM core. Thumb-1 only was seen; treat as ARMv5T until proven otherwise.
-3. The 9-byte header message and the 8-byte trailer encoding.
+3. The 9-byte header message. (The 8-byte trailer is now decoded: sampled
+   lane sums + byte-sum, see above; whether the bootloader enforces the
+   lane check is still unknown.)
 4. Recovery: Update mode is entered by key combination before the main image
    runs, so a bad main image should be recoverable by reflashing stock. Not
    tested. Never touch the boot ROM.
