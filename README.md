@@ -126,8 +126,8 @@ and was repeated.
 
 ## Building and developing
 
-- **Build from source.** macOS or Linux and Python 3. Put Yamaha's updater
-  zip in `reface_csdx_fw/updater/` and run
+- **Build from source.** macOS and Python 3. Put Yamaha's updater zip,
+  `reface_updater_CSDX_v130-3_mac.zip`, in `reface_csdx_fw/updater/` and run
   `reface_csdx_fw/tools/make_updaters.sh`. It extracts the stock image,
   builds the two patched payloads, runs every check, and makes re-signed
   copies of Yamaha's updater app with each payload. Rosetta is needed on

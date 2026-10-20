@@ -1,6 +1,6 @@
 // Read named files from a zip archive with the browser's own deflate
 // decoder (DecompressionStream, also in Node 18+), so the page loads no
-// third-party code. Enough for Zoom's firmware zip: stored or deflated
+// third-party code. Enough for Yamaha's updater zip: stored or deflated
 // entries, no zip64, no encryption.
 
 const u16 = (b, o) => b[o] | (b[o + 1] << 8);

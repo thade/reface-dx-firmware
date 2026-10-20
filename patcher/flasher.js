@@ -14,7 +14,7 @@ export class FlashError extends Error {
 }
 
 export class Flasher {
-  constructor(access) { this.access = access; this.cancelled = false; }
+  constructor(access) { this.access = access; }
 
   static async connect(nav = globalThis.navigator) {
     let access;
@@ -32,12 +32,10 @@ export class Flasher {
   // Send every message in order with its delay before it. progress(i, n)
   // after each message.
   async send(output, msgs, progress = () => {}) {
-    this.cancelled = false;
     try { await output.open(); } catch (e) {
       throw new FlashError('busy', 'Could not open the reface port. Close Yamaha\'s updater and any other MIDI software, then try again.');
     }
     for (let i = 0; i < msgs.length; i++) {
-      if (this.cancelled) throw new FlashError('cancelled', 'Stopped.');
       if (msgs[i].delay) await sleep(msgs[i].delay);
       try { output.send(msgs[i].data); } catch (e) {
         throw new FlashError('send', `The reface stopped accepting data at block ${i} of ${msgs.length}: ${e.message}`);
@@ -47,6 +45,4 @@ export class Flasher {
     // the file ends with the same gap before end-of-track; give the DX that time too
     await sleep(msgs[msgs.length - 1].delay || 1400);
   }
-
-  cancel() { this.cancelled = true; }
 }

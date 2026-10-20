@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
 <title>reface DX clock switch</title>
 <meta name="description" content="Make the unofficial MIDI clock switch firmware for the Yamaha reface DX from Yamaha's own v1.30 updater, in your browser, and send it to the DX.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Archivo+Narrow:wght@500;600&display=swap" rel="stylesheet">
 <style>
+@font-face { font-family: 'Archivo'; font-weight: 400 800; font-display: swap; src: url(fonts/archivo.woff2) format('woff2'); }
+@font-face { font-family: 'Archivo Narrow'; font-weight: 500 600; font-display: swap; src: url(fonts/archivo-narrow.woff2) format('woff2'); }
 :root {
   --bg: #FFFFFF; --ink: #111111; --ink-2: #333333; --muted: #5E5E5E; --faint: #767676; --numeral: #D0D0D0;
   --rule: #111111; --line: #DDDDDD; --red: #1D4ED8; --red-ink: #1E40AF; --ok: #1A7F45; --wash: #F6F6F6; --on-red: #FFFFFF;
@@ -131,7 +131,7 @@ CLOCK
       <h2>Download Yamaha's reface updater v1.30</h2>
       <p class="measure">On Yamaha's support site, download the <strong>reface CS/DX updater v1.30</strong> for Mac. You get <code>reface_updater_CSDX_v130-3_mac.zip</code>; keep it zipped, you don't need to open it.</p>
       <p><a class="button outline" href="https://usa.yamaha.com/support/updates/reface_csdx_updater_for_mac.html" rel="noopener">Yamaha's reface CS/DX updater page →</a></p>
-      <p class="small">The updater for the <strong>CS and DX</strong>, not the one for the CP and YC. The Windows download holds the same firmware file and works too.</p>
+      <p class="small">The updater for the <strong>CS and DX</strong>, not the one for the CP and YC. Use the Mac download even on Windows. The page only reads the zip, and the Windows download has not been tried.</p>
     </div>
   </section>
 

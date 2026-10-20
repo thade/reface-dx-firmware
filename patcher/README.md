@@ -8,7 +8,9 @@ none of Yamaha's firmware.
 - `index.html` and `page.js`: the page (what the firmware does, get Yamaha's
   file, accept the risks, drop the zip or `reface updater.dat`, then send the
   result to the DX or download it). `zip.js` reads the zip with the browser's
-  own deflate decoder. The page loads no third-party code.
+  own deflate decoder. The page loads nothing from other sites. Its two
+  fonts, Archivo and Archivo Narrow, are in `fonts/` under the SIL Open Font
+  License.
 - `patcher.js`: the build, a JavaScript copy of
   [refacefw.py](../reface_csdx_fw/tools/refacefw.py) (the updater payload is
   a Standard MIDI File of SysEx blocks) and of the data side of

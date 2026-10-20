@@ -141,7 +141,9 @@ $('b2').addEventListener('click', () => step(2, async () => {
   const bar = $('bar'); bar.hidden = false; bar.max = msgs.length; bar.value = 0;
   $('port').disabled = true;
   task(2, `Sending block 0 of ${msgs.length}…`, 'now'); $('t2').prepend(bar);
-  await flasher.send(out, msgs, (i, n) => { bar.value = i; $('t2').lastChild.textContent = `Sending block ${i} of ${n}… about ${Math.ceil((n - i) * 1.4 / 60)} min left`; });
+  try {
+    await flasher.send(out, msgs, (i, n) => { bar.value = i; $('t2').lastChild.textContent = `Sending block ${i} of ${n}… about ${Math.ceil((n - i) * 1.4 / 60)} min left`; });
+  } finally { $('port').disabled = false; }
   task(2, 'All blocks sent. Watch the DX display.', 'ok'); $('t2').prepend(bar);
   $('sendNext').hidden = false; setStep(5);
 }));

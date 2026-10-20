@@ -7,8 +7,8 @@ for download:
 - **reface Data List** (`reface_en_dl_b0.pdf`): the MIDI implementation
   chart and the SysEx parameter tables, including the system parameter
   addresses used throughout `menu-internals.md`.
-- **reface Owner's Manual** (`ZT92080_reface_En_OM_C0.pdf`): Function mode,
-  the DATA ENTRY switches, Update mode is not in it.
+- **reface Owner's Manual** (`ZT92080_reface_En_OM_C0.pdf`): Function mode
+  and the DATA ENTRY switches. It does not describe Update mode.
 - **reface Reference Manual** (`reface_en_rm_a0.pdf`).
 - **reface DX v1.30 Supplementary Manual** (`v130_Manual_en.pdf`): the
   FUNCTION pages as numbered in firmware v1.30.

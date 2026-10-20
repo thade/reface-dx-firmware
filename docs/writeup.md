@@ -135,9 +135,8 @@ stock copy launches and logs that it loaded the replaced payload.
 
 ## Next
 
-Done on USB. Remaining: flash the MIDI 2 menu-switch build (CHECKLIST Phase
-3) — which key selects page 6 and whether the setting survives power cycles
-are the two hardware questions. Optional afterwards: confirm the DIN MIDI
+The MIDI 2 build was tested on the DX on 20 October 2026 (see
+[hardware-tests.md](hardware-tests.md)). Still open: confirm the DIN MIDI
 OUT is equally quiet (same transmit path, so expected).
 
 ## Reported, not verified here

@@ -27,7 +27,7 @@ Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `
 
 1. Power the DX off. Hold **F#3 + A3 + C#4** and press Standby/On. Display should read "reface DX Update". If it boots normally instead, you missed a key; power off and retry.
 2. Open `updater/stock/reface updater.app`. First launch on this Mac may need right-click > Open because it is ad-hoc signed, and it runs under Rosetta.
-3. Follow the app: it should find the device and show progress. Yamaha says ~5 minutes; the SMF is 139 blocks with ~0.7 s gaps, so expect 2 to 5 minutes.
+3. Follow the app: it should find the device and show progress. The SMF is 139 blocks about 1.4 s apart, so expect about 3 minutes.
 4. Do not touch the cable, the Mac, or the DX until the app says it is finished and the DX restarts.
 5. Expected result: DX boots normally, same version, voices intact.
    - If the updater reports an error before sending: USB/driver issue, not firmware. Retry with a different cable/port.
@@ -82,7 +82,7 @@ behaves like stock until you turn the clock off.
    the MIDI page does for CONTROL / LOCAL; that is expected, not a fault.
 6. Set CLOCK off, then **leave FUNCTION** (press any other panel button,
    e.g. one of the voice-edit buttons) — that is when the settings block is
-   written to flash (MENU_RE §9).  Power-cycle, re-enter FUNCTION: the
+   written to flash (menu-internals.md §9).  Power-cycle, re-enter FUNCTION: the
    CLOCK setting and the clock behaviour should persist, and FUNCTION should
    come back on the page you left.  Switching off while still on the
    FUNCTION screen loses the change, exactly as for any stock setting.
@@ -90,7 +90,7 @@ behaves like stock until you turn the clock off.
    edits, Looper Start/Stop, notes all normal.
    - Voice page: with a POLY voice column 3 must be empty, with a MONO
      voice it must show Portamento Time, exactly as stock (an earlier build
-     broke this; the fix is verified by emulation, MENU_RE §8).
+     broke this; the fix is verified by emulation, menu-internals.md §8).
    - Leave FUNCTION while on MIDI 2 and re-enter: it should come back on
      MIDI 2 (the page-index parameter now allows 5).
 8. If anything misbehaves, reflash `updater/stock` or `updater/orig` — the
