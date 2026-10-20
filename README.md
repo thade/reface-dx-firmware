@@ -18,7 +18,8 @@ the new firmware on your own computer and sends it to the DX. You can also
   all the time and Yamaha gives no way to stop it, which makes it hard to use
   as a keyboard alongside another clock source. This firmware adds a sixth
   FUNCTION page, **MIDI 2**, with one item, **CLOCK**. When CLOCK is off the
-  DX sends no clock. The DX keeps the setting when it is switched off.
+  DX sends no clock. The DX saves the setting when you leave the FUNCTION
+  menu (see [Using it](#using-it)).
 - **A version with the clock always off**, if you prefer no menu change.
   Four bytes differ from Yamaha's firmware.
 
@@ -59,7 +60,7 @@ notes, Start and Stop, Active Sensing.
 1. **Make the file.** Open the
    [patcher page](https://thade.github.io/reface-dx-firmware/), download
    Yamaha's updater zip from the link there, and drop the zip on the page.
-   It makes the firmware on your computer; nothing is uploaded.
+   The page makes the firmware on your computer and uploads nothing.
 2. **Put the DX into Update mode.** Power it from its AC adaptor and connect
    it by USB. Close any music software. Switch the DX off, hold the keys
    **F#3**, **A3** and **C#4** together, and switch it on. The display reads
@@ -85,14 +86,13 @@ the one that toggles AUTO P.OFF on the System page. CLOCK changes between
 ON and off, and the clock stops or starts at once.
 
 **Saving the setting.** The DX writes its settings to memory when you leave
-the FUNCTION menu, by pressing any other button, the same as for every stock
-setting. If you switch off while still on the FUNCTION pages, the change is
-lost.
+the FUNCTION menu by pressing any other button. If you switch off while
+still on the FUNCTION pages, the change is lost.
 
-**External clock.** When the DX receives MIDI clock from another device it
-follows that clock and sends none of its own, whatever CLOCK says. That is
-how Yamaha made it. After three seconds without incoming clock it goes back
-to its own.
+**External clock.** When the DX receives MIDI clock from another device,
+Yamaha's firmware follows that clock and sends none of its own, whatever
+CLOCK says. After three seconds without incoming clock it goes back to its
+own.
 
 **What still gets sent.** Active Sensing, notes, controllers, Start, Stop
 and Continue from the Looper, and SysEx are not affected.
