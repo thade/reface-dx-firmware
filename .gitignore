@@ -7,3 +7,6 @@ __pycache__/
 
 # Yamaha updater app copies (built by tools/make_updaters.sh)
 reface_csdx_fw/updater/
+
+# Claude desktop app session config
+.claude/
