@@ -159,3 +159,6 @@ Write the outcome of each phase here with the display text and MIDI monitor obse
   mode, not byte 0x15, and an emulation of receive with byte 0x15 = 0 and 1 gave the same result. Before this
   test, EXT had been seen only with CLOCK on in the user's own setup; the cause there was not determined.
   Phase 3 steps 4-7 were not re-run on this payload.
+- No-clock payload `af1d2453…4799` (unchanged since Phase 2), reflashed 2026-10-20 after the clockmenu tests.
+  10 s USB listen with timing and Active Sensing unfiltered: 0 x F8, 51 x FE (196 ms), no other traffic.
+  Looper Start/Stop, notes and DIN were not re-checked.
