@@ -22,6 +22,27 @@ Usage:
 """
 import sys, struct
 
+class FirmwareError(Exception):
+    """A check on an input file or a built image failed."""
+
+def check(cond, msg="check failed"):
+    """Like assert, but not removed by python -O: every guard against a bad
+    payload goes through here."""
+    if not cond:
+        raise FirmwareError(msg)
+
+def run(main):
+    """Command-line entry: a failed check prints one line and exits 1."""
+    try:
+        sys.exit(main(sys.argv))
+    except FirmwareError as e:
+        print("error:", e, file=sys.stderr)
+        sys.exit(1)
+
+def header_blocks(header):
+    """Data-block count recorded in message 0's header (bytes 1-2, 7-bit)."""
+    return (header[1] << 7) | header[2]
+
 YAMAHA_HDR = bytes([0x43, 0x00, 0x7F, 0x1C])
 ADDRESS = bytes([0x03, 0x50, 0x00])
 RAW_PER_BLOCK = 14322          # raw bytes per full block (2046 groups of 7)
@@ -52,11 +73,11 @@ def parse_smf(d):
     A message split across an F0 event and following F7 continuation events
     (the SMF way of chunking long SysEx) is reassembled into one body.
     """
-    assert d[:4] == b"MThd", "not a Standard MIDI File"
+    check(d[:4] == b"MThd", "not a Standard MIDI File")
     ntracks = struct.unpack(">H", d[10:12])[0]
-    assert ntracks == 1, "expected a single-track (format 0) file, got %d tracks" % ntracks
+    check(ntracks == 1, "expected a single-track (format 0) file, got %d tracks" % ntracks)
     p = 14
-    assert d[p:p + 4] == b"MTrk"
+    check(d[p:p + 4] == b"MTrk")
     tl = struct.unpack(">I", d[p + 4:p + 8])[0]; p += 8; end = p + tl
     msgs = []; running = None; open_sysex = False
     while p < end:
@@ -96,13 +117,13 @@ def yamaha_checksum(addr_and_data):
 
 def split_msg(body):
     """body = bytes after F0 up to and including F7. Verifies framing and checksum, returns data."""
-    assert body[:4] == YAMAHA_HDR, body[:8].hex()
+    check(body[:4] == YAMAHA_HDR, body[:8].hex())
     cnt = (body[4] << 7) | body[5]
-    assert body[6:9] == ADDRESS
+    check(body[6:9] == ADDRESS)
     data = body[9:-2]; cs = body[-2]
-    assert body[-1] == 0xF7
-    assert cnt == 3 + len(data), (cnt, len(data))
-    assert yamaha_checksum(body[6:-2]) == cs, "checksum mismatch"
+    check(body[-1] == 0xF7)
+    check(cnt == 3 + len(data), (cnt, len(data)))
+    check(yamaha_checksum(body[6:-2]) == cs, "checksum mismatch")
     return data
 
 def build_msg(data):
@@ -113,7 +134,7 @@ def build_msg(data):
 # -------------------------------------------------------------- 7-bit packing
 def unpack7(p):
     out = bytearray()
-    assert len(p) % 8 == 0
+    check(len(p) % 8 == 0)
     for i in range(0, len(p), 8):
         msb = p[i]
         for j in range(7):
@@ -140,11 +161,13 @@ def extract(d):
         data = split_msg(body)
         sub, packed = data[:5], data[5:]
         blk = (sub[1] << 7) | sub[2]; ln = (sub[3] << 7) | sub[4]
-        assert sub[0] == 1 and blk == i, sub.hex()
+        check(sub[0] == 1 and blk == i, sub.hex())
         ngroups = len(packed) // 8
         rawlen = ln - ngroups
-        assert 0 < rawlen <= ngroups * 7, (ln, ngroups)
+        check(0 < rawlen <= ngroups * 7, (ln, ngroups))
         img += unpack7(packed)[:rawlen]
+    check(len(msgs) - 1 == header_blocks(hdr),
+          "header says %d data blocks, file has %d" % (header_blocks(hdr), len(msgs) - 1))
     return hdr, bytes(img)
 
 # -------------------------------------------------------------------- repack
@@ -157,6 +180,8 @@ def repack(img, header=HEADER_MSG_DATA):
         return _varlen(delta) + b"\xf0" + _varlen(len(body)) + body
     events += sysex(0, build_msg(header))
     nblocks = (len(img) + RAW_PER_BLOCK - 1) // RAW_PER_BLOCK
+    check(nblocks == header_blocks(header),
+          "a %d-byte image makes %d blocks, but the header says %d" % (len(img), nblocks, header_blocks(header)))
     for i in range(nblocks):
         raw = img[i * RAW_PER_BLOCK:(i + 1) * RAW_PER_BLOCK]
         packed = pack7(raw)
@@ -207,6 +232,7 @@ def main(argv):
         print("header:", hdr.hex(), " image:", len(img), "bytes ->", argv[3])
     elif cmd == "repack":
         img = open(argv[2], "rb").read()
+        check(len(img) == IMAGE_SIZE, "%s is %d bytes; a reface CS/DX v1.30 image is %d" % (argv[2], len(img), IMAGE_SIZE))
         open(argv[3], "wb").write(repack(img))
         print("wrote", argv[3])
     elif cmd == "roundtrip":
@@ -225,4 +251,4 @@ def main(argv):
     return 0
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    run(main)

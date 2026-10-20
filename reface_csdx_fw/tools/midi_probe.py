@@ -7,6 +7,7 @@ seen (F8 clock, FE active sensing, FA/FB/FC) so clock behaviour is recorded
 before and after flashing.
 
 Usage: midi_probe.py [seconds] [port-substring]
+Needs mido and python-rtmidi (venv/bin/pip install mido python-rtmidi).
 """
 import sys, time, collections, mido
 
@@ -21,6 +22,8 @@ def main(argv):
     print("in :", ins[0]); print("out:", outs[0])
     counts = collections.Counter(); ident = None; others = []
     with mido.open_input(ins[0]) as i, mido.open_output(outs[0]) as o:
+        if hasattr(i, "_rt"):                  # mido's rtmidi backend drops Active Sensing by default
+            i._rt.ignore_types(sysex=False, timing=False, active_sense=False)
         o.send(mido.Message("sysex", data=[0x7E, 0x7F, 0x06, 0x01]))
         t0 = time.time(); clocks = []
         while time.time() - t0 < secs:
@@ -43,7 +46,7 @@ def main(argv):
     if ident:
         d = ident
         print("identity reply:", d.hex())
-        if len(d) >= 14 and d[3] == 0x02 and d[4] == 0x43:
+        if len(d) >= 13 and d[3] == 0x02 and d[4] == 0x43:
             print("  Yamaha, family %02x%02x member %02x%02x, version bytes %s" % (d[5], d[6], d[7], d[8], d[9:13].hex()))
     else:
         print("no identity reply")

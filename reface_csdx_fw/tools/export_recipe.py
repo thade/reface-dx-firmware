@@ -13,7 +13,8 @@ Usage: export_recipe.py <stock updater.dat> <out dir>
 """
 import sys, os, json, base64, hashlib, struct
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
-import refacefw, patch_clock, patch_clock_menu as pm
+import refacefw, patch_clock, patch_clock_menu as pm, selftest
+check = refacefw.check
 
 def sha(b): return hashlib.sha256(b).hexdigest()
 def b64(b): return base64.b64encode(bytes(b)).decode()
@@ -48,13 +49,21 @@ def clock_switch(stock_img):
 def no_clock(stock_img):
     img = bytearray(stock_img)
     off = patch_clock.BL_ADDR - patch_clock.BASE
+    check(patch_clock.BL_ADDR + 4 + patch_clock.decode_bl(bytes(img[off:off + 4])) == patch_clock.BL_TARGET,
+          "no-clock site is not the BL to the transmit function: wrong image?")
     img[off:off + 4] = patch_clock.NOP2
     return bytes(img), {"ops": diff_ops(stock_img, bytes(img), [])}
 
+# The published payloads: a recipe whose result differs from these is refused.
+PINS = {"clock-switch": selftest.EXPECT["clockmenu payload"], "no-clock": selftest.EXPECT["noclock payload"]}
+
 def main(argv):
+    if len(argv) < 3:
+        print(__doc__); return 2
     dat = open(argv[1], "rb").read(); out = argv[2]
+    check(sha(dat) == selftest.EXPECT["stock payload"], "%s is not Yamaha's v1.30 reface updater.dat" % argv[1])
     hdr, stock_img = refacefw.extract(dat)
-    assert refacefw.repack(stock_img, hdr) == dat, "stock updater.dat does not round-trip"
+    check(refacefw.repack(stock_img, hdr) == dat, "stock updater.dat does not round-trip")
     recipes = {
         "clock-switch": ("Clock switch (MIDI 2 page)", clock_switch),
         "no-clock": ("Clock always off", no_clock),
@@ -68,6 +77,7 @@ def main(argv):
                "image_sha256": sha(img), "payload_sha256": sha(payload), "payload_size": len(payload),
                "smf": {"ppqn": 480, "tempo_us": 500000, "block_delta": refacefw.BLOCK_DELTA}}
         rec.update(body)
+        check(rec["payload_sha256"] == PINS[key], "%s payload %s differs from the pin in selftest.py" % (key, rec["payload_sha256"][:16]))
         with open(os.path.join(out, key + ".json"), "w") as f:
             json.dump(rec, f, indent=1)
         print("%-13s ops %3d  image %s  payload %s" % (key, len(rec["ops"]), rec["image_sha256"][:16], rec["payload_sha256"][:16]))
@@ -76,4 +86,4 @@ def main(argv):
     return 0
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    refacefw.run(main)

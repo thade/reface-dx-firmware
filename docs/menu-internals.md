@@ -666,8 +666,8 @@ sector after this image):
   its default, 0x02042944 stores 0x11/0x12 when `[0x04091984+6]` = 1,
   0x02042974 stores 0x13, then 0x02042B9C and the dirty checks
   0x020444CC(5)/(4) decide whether to write.  None of them touches 0x15.
-* Emulated end to end: `verify_ui.py` (store applied by the harness; the
-  real store path is the receiver check in §8) — toggle on page 5,
+* Emulated end to end: `verify_ui.py`, with the store applied by the
+  harness and again through the firmware's own store path — toggle on page 5,
   leave FUNCTION → NV shadow byte 0x15 = 1 and exactly one flash write;
   stock leave without change → no write; re-enter → page 5.
   `verify_paths.py` — the boot path above with a real NV image at

@@ -220,11 +220,11 @@ def main(argv):
     stock = open(path, "rb").read()
     sim = UISim(stock)
     sim.mode_switch(1); print("mode 1       ", sim.fmt()); print("   ", sim.dump())
-    sim.lcd = lcd.LCD(); sim.key(0x0F); print("FUNCTION     ", sim.fmt()); print("   ", sim.dump())
+    sim.lcd = lcd.LCD(); sim.key(0x0F); print("EDIT (0x0F)  ", sim.fmt()); print("   ", sim.dump())
     print(sim.lcd.text()); print("blits:", sim.lcd.blits)
     for k in (0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A):
         sim.lcd = lcd.LCD(); sim.key(k); print("key %#04x     " % k, sim.fmt()); print("   ", sim.dump()); print("    blits:", sim.lcd.blits)
-    sim.key(0x0F); print("FUNCTION     ", sim.fmt())
+    sim.key(0x0F); print("EDIT (0x0F)  ", sim.fmt())
     print("unmapped pages touched:", ["%#x" % p for p in sorted(sim.unmapped)][:16])
     return 0
 

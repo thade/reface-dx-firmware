@@ -5,14 +5,15 @@ what happens, with the stock image as the control.
 
   cycling       FUNCTION (micom key 0x0B) cycles pages 0-4 on stock, 0-5 on patched
   receiver      the posted type-0x0B store message is processed by the MIDI task's
-                real message loop: stock key 0x14 lands byte 0x0E; patched key
-                0x12 must land byte 0x15 (it does not: the receiver only
-                handles system addresses 0x00-0x13 -- reported, not patched)
+                real message loop: stock key 0x14 lands byte 0x0E; on patched key
+                0x12 the receiver drops address 0x15 (it only handles system
+                addresses 0x00-0x13) and the key handler's own strb lands it
   toggle        column-0 key (0x12) on page 5 toggles byte 0x15 via the real setter
                 (UI side: receiver="manual" applies the store by hand)
   cursor        other column keys on page 5 only move the cursor
   persistence   leaving FUNCTION copies the block to the NV shadow and writes flash
-                only when something changed; re-entering returns to page 5 (manual store)
+                only when something changed; re-entering returns to page 5 (manual
+                store), and the toggle-and-save also passes through the real store path
   screen        the deferred renderer draws page 5: MIDI icon, CLOCK label, ON/OFF (manual store)
   fuzz          random key sequences on stock and patched: no faults, identical
                 state except on page 5 / byte 0x15, other settings bytes untouched
@@ -64,9 +65,8 @@ def test_receiver(stock, img, P):
     ok &= check(len(h) == 1 and h[0][1][:4].hex() == "00001501" and not sim.fatal and sim.hung is None,
                 "patched page 5 key 0x12 -> message %s dispatched, no fatal, no hang" % (h[0][1][:4].hex() if h else None))
     ok &= check(v == 1, "patched: live byte 0x15 = %d after the real receiver ran (expected 1)%s" % (
-        v, "" if v == 1 else "\n       -> the type-0x0B handler 0x02036C84 -> 0x0203A65C dispatches system addresses through"
-        " table 0x0209FCBC only for lo <= 0x13 (cmp #0x13 at 0x0203A676); 0x15 falls through and is never stored."
-        " On hardware the CLOCK toggle will do nothing visible. See docs/menu-internals.md section 2.3."))
+        v, "" if v == 1 else "\n       -> the receiver drops 0x15 (table 0x0209FCBC stops at 0x13), so the key handler's"
+        " own strb must store it; without that the CLOCK toggle does nothing. See docs/menu-internals.md section 2.3."))
     return ok
 
 def test_toggle(stock, img, P):
@@ -96,7 +96,7 @@ def test_cursor(stock, img, P):
     return ok
 
 def test_persistence(stock, img, P):
-    print("persistence on leaving FUNCTION (receiver=manual)")
+    print("persistence on leaving FUNCTION (receiver=manual, then real)")
     ok = True
     def writes(sim): return sum(1 for ev in sim.log for c in ev[2] if c == "flash_write")
     sim = fresh(stock, "manual"); sim.key(FUNCTION); sim.key(EDIT)
@@ -109,6 +109,17 @@ def test_persistence(stock, img, P):
     ok &= check(st["mode"] == 7 and st["applied_page"] == 5, "re-enter FUNCTION -> page 5 again (page index not clamped)")
     sim = fresh(stock, "manual"); goto_page(sim, 4); sim.key(EDIT); sim.key(FUNCTION)
     ok &= check(sim.state()["applied_page"] == 4, "control: stock re-enters on page 4")
+    # the same through the firmware's own store path (receiver=real): the key
+    # handler's strb is what lands the byte, and the save on leaving picks it up
+    for start in (0, 1):
+        sim = fresh(img)
+        sim.e.w8(pm.SETTINGS + 0x15, start); sim.e.w8(ui_sim.NV_SHADOW + 0x15, start)
+        goto_page(sim, 5); sim.key(COL[0]); live = sim.state()["flag15"]
+        sim.key(EDIT); st = sim.state()
+        ok &= check(live == 1 - start and st["mode"] != 7 and st["nv15"] == 1 - start and writes(sim) == 1
+                    and not sim.fatal and sim.hung is None,
+                    "receiver=real, byte 0x15 %d: toggle -> live %d, leave FUNCTION -> NV shadow %d, %d flash write(s)"
+                    % (start, live, st["nv15"], writes(sim)))
     return ok
 
 def test_screen(stock, img, P):

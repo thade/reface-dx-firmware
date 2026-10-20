@@ -14,9 +14,9 @@ case (see docs/menu-internals.md sections 2.3, 8 and 9).
             system bulk dump block go through the MIDI task's real message
             loop and parser 0x02037820 (ui_sim.UISim.sysex).  Asserts no
             assert/fatal logger call and no hang, that the bulk dump carries
-            byte 0x15, and (as specified by the task) that the patched image
-            stores the clamped value for 0x15 -- which it does NOT: the
-            receive paths only handle system addresses 0x00-0x13.
+            byte 0x15, and that a parameter change or bulk block for 0x15 is
+            ignored on both images (the receive paths only handle system
+            addresses 0x00-0x13, so a host cannot set the flag).
 
 Usage: verify_paths.py [stock_image.bin]      (needs reface_csdx_fw/venv: unicorn, capstone)
 """

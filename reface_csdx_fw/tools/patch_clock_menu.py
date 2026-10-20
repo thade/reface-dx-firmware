@@ -63,6 +63,7 @@ Usage: patch_clock_menu.py <image.bin> <patched.bin> [<patched.mid>]
 import sys, os, struct
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import refacefw
+check = refacefw.check
 try:
     from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB, CS_MODE_BIG_ENDIAN
     md = Cs(CS_ARCH_ARM, CS_MODE_THUMB | CS_MODE_BIG_ENDIAN)
@@ -115,33 +116,44 @@ class Asm:
     def label(self, name):
         self.labels[name] = self.org + len(self.buf)
     def _h(self, hw): self.buf += be16(hw)
+    # Thumb-1 encodings below only reach r0-r7 and fixed-width immediates;
+    # a value out of range would silently change other opcode bits.
+    @staticmethod
+    def _lo(*regs):
+        check(all(0 <= r <= 7 for r in regs), "low register expected: %s" % (regs,))
+    @staticmethod
+    def _imm(v, lo, hi):
+        check(lo <= v <= hi, "immediate %s outside %d..%d" % (v, lo, hi))
     def push(self, regs=(), lr=False):
+        self._lo(*regs)
         v = 0x0100 if lr else 0            # M bit (LR) is bit 8
         for r in regs: v |= 1 << r
         self._h(0xB400 | v)
     def pop(self, regs=(), pc=False):
+        self._lo(*regs)
         v = 0x0100 if pc else 0            # P bit (PC) is bit 8
         for r in regs: v |= 1 << r
         self._h(0xBC00 | v)
-    def movs(self, rd, imm): self._h(0x2000 | (rd << 8) | imm)
+    def movs(self, rd, imm): self._lo(rd); self._imm(imm, 0, 255); self._h(0x2000 | (rd << 8) | imm)
     def ldr(self, rt, value):                 # literal pool load
+        self._lo(rt)
         self.poolrefs.append((len(self.buf), rt, len(self.pool)))
         self.pool.append(value); self._h(0x4800 | (rt << 8))
     def ldrb(self, rt, rn, imm=0):
-        assert 0 <= imm <= 31
+        self._lo(rt, rn); check(0 <= imm <= 31)
         self._h(0x7800 | (imm << 6) | (rn << 3) | rt)
     def strb(self, rt, rn, imm=0):
-        assert 0 <= imm <= 31
+        self._lo(rt, rn); check(0 <= imm <= 31)
         self._h(0x7000 | (imm << 6) | (rn << 3) | rt)
-    def cmp(self, rd, imm): self._h(0x2800 | (rd << 8) | imm)
+    def cmp(self, rd, imm): self._lo(rd); self._imm(imm, 0, 255); self._h(0x2800 | (rd << 8) | imm)
     def lsls(self, rd, rm, imm):
-        assert 0 < imm < 32
+        self._lo(rd, rm); check(0 < imm < 32)
         self._h(0x0000 | (imm << 6) | (rm << 3) | rd)
-    def add3(self, rd, rn, rm): self._h(0x1800 | (rm << 6) | (rn << 3) | rd)
-    def sub_sp(self, imm): assert imm % 4 == 0 and imm < 512; self._h(0xB080 | (imm >> 2))
-    def add_sp(self, imm): assert imm % 4 == 0 and imm < 512; self._h(0xB000 | (imm >> 2))
-    def str_sp(self, rt, imm): assert imm % 4 == 0 and imm < 1024; self._h(0x9000 | (rt << 8) | (imm >> 2))
-    def add_rd_sp(self, rd, imm=0): assert imm % 4 == 0 and imm < 1024; self._h(0xA800 | (rd << 8) | (imm >> 2))
+    def add3(self, rd, rn, rm): self._lo(rd, rn, rm); self._h(0x1800 | (rm << 6) | (rn << 3) | rd)
+    def sub_sp(self, imm): check(imm % 4 == 0 and imm < 512); self._h(0xB080 | (imm >> 2))
+    def add_sp(self, imm): check(imm % 4 == 0 and imm < 512); self._h(0xB000 | (imm >> 2))
+    def str_sp(self, rt, imm): self._lo(rt); check(imm % 4 == 0 and imm < 1024); self._h(0x9000 | (rt << 8) | (imm >> 2))
+    def add_rd_sp(self, rd, imm=0): self._lo(rd); check(imm % 4 == 0 and imm < 1024); self._h(0xA800 | (rd << 8) | (imm >> 2))
     def b(self, tgt, cond=None):
         kinds = {None: 0xE0, "eq": 0xD0, "ne": 0xD1, "hi": 0xD8, "lo": 0xD3,
                  "ge": 0xDA, "lt": 0xDB, "gt": 0xDC, "le": 0xDD}
@@ -150,7 +162,7 @@ class Asm:
     def bl(self, abs_addr):
         self.fix.append((len(self.buf), "bl", abs_addr))
         self._h(0xF000); self._h(0xF800)
-    def bx(self, rm): self._h(0x4700 | (rm << 3))
+    def bx(self, rm): self._imm(rm, 0, 14); self._h(0x4700 | (rm << 3))
     def assemble(self):
         while len(self.buf) % 4:
             self._h(0x46C0)                   # nop
@@ -160,25 +172,27 @@ class Asm:
         for pos, rt, idx in self.poolrefs:
             paddr = pool_at + 4 * idx
             pc = (self.org + pos + 4) & ~3
-            assert (paddr - pc) % 4 == 0, "literal pool misaligned (org must be 4-aligned)"
+            check((paddr - pc) % 4 == 0, "literal pool misaligned (org must be 4-aligned)")
             imm = (paddr - pc) // 4
-            assert 0 <= imm <= 255, "literal out of range"
+            check(0 <= imm <= 255, "literal out of range")
             self.buf[pos:pos+2] = be16(0x4800 | (rt << 8) | imm)
         for pos, kind, tgt in self.fix:
             at = self.org + pos
             if kind == "bl":
-                off = tgt - (at + 4); assert off % 2 == 0, off
+                off = tgt - (at + 4); check(off % 2 == 0, off)
+                # org 0 is the size probe, where far targets are expected to be out of reach
+                check(self.org == 0 or -0x400000 <= off < 0x400000, "bl out of range: %#x" % off)
                 off >>= 1
                 self.buf[pos:pos+2] = be16(0xF000 | ((off >> 11) & 0x7FF))
                 self.buf[pos+2:pos+4] = be16(0xF800 | (off & 0x7FF))
             else:
                 t = self.labels[tgt] if isinstance(tgt, str) else tgt
-                off = t - (at + 4); assert off % 2 == 0, off
+                off = t - (at + 4); check(off % 2 == 0, off)
                 if kind == "b":
-                    assert -2048 <= off < 2046, off
+                    check(-2048 <= off < 2046, off)
                     self.buf[pos:pos+2] = be16(0xE000 | ((off >> 1) & 0x7FF))
                 else:
-                    assert -254 <= off <= 254, (kind, off)
+                    check(-254 <= off <= 254, (kind, off))
                     base = struct.unpack(">H", self.buf[pos:pos+2])[0] & 0xFF00
                     self.buf[pos:pos+2] = be16(base | ((off >> 1) & 0xFF))
         return bytes(self.buf)
@@ -270,30 +284,37 @@ def make_midi2_title(midi_rows):
     return retitle(rows, NPAGES - 1)
 
 # ------------------------------------------------------------------ main -----
+# Ink runs right of x = 88 in each row of a stock title: rows 3 and 8 cross
+# the five dots once each, rows 4-7 cross the four hollow dots twice and the
+# filled one once, every other row is blank there.
+STOCK_DOT_RUNS = [0, 0, 0, 5, 9, 9, 9, 9, 5, 0, 0, 0]
+def dot_runs(rows):
+    return [sum(1 for x in range(88, TITLE_W) if r[x] and not r[x - 1]) for r in rows]
+
 def patch(img):
     """Returns (patched image, human-readable report, placements): placements
     maps each free-ROM item to its link address."""
     d = bytearray(img)
-    assert len(d) == 0x1E0000, "unexpected image size"
+    check(len(d) == 0x1E0000, "unexpected image size")
     stock_lanes, stock_sum = refacefw.sampled_lanes(d), refacefw.byte_sum(d)
-    assert stock_lanes == refacefw.trailer_lanes(d), "stock trailer lanes do not verify"
+    check(stock_lanes == refacefw.trailer_lanes(d), "stock trailer lanes do not verify")
 
     # context assertions ---------------------------------------------------
-    assert d[ROM_DESC:ROM_DESC+8] == bytes([5,0,0,0]) + be32(0x04011020), "descriptor mismatch"
+    check(d[ROM_DESC:ROM_DESC+8] == bytes([5,0,0,0]) + be32(0x04011020), "descriptor mismatch")
     h1 = struct.unpack_from(">H", d, CLOCK_BL)[0]
     h2 = struct.unpack_from(">H", d, CLOCK_BL+2)[0]
     off = (((h1 & 0x7FF) << 12) | ((h2 & 0x7FF) << 1))
     if off & 0x400000: off -= 0x800000
-    assert BASE + CLOCK_BL + 4 + off == CLOCK_SEND, "clock BL mismatch"
-    assert d[REC_HOOK-4:REC_HOOK+6] == bytes.fromhex("0083181b009b18d36163"), "page-apply record arithmetic mismatch"
-    assert all(b == 0xFF for b in d[0x140000:0x140400]), "free ROM not empty"
+    check(BASE + CLOCK_BL + 4 + off == CLOCK_SEND, "clock BL mismatch")
+    check(d[REC_HOOK-4:REC_HOOK+6] == bytes.fromhex("0083181b009b18d36163"), "page-apply record arithmetic mismatch")
+    check(all(b == 0xFF for b in d[0x140000:0x140400]), "free ROM not empty")
     for r in range(5):                          # the five page records
         o = ROM_LIST + r * 20
-        assert d[o] in (1, 2, 3, 4) and d[o+1:o+4] == b"\0\0\0"
+        check(d[o] in (1, 2, 3, 4) and d[o+1:o+4] == b"\0\0\0")
     # parameter entries: {be32 ptr, be32 default, be32 min, be32 max, be32 type}
-    assert d[SYS_ENTRIES + 0x0E*20:SYS_ENTRIES + 0x0F*20] == be32(0)*3 + be32(1) + be32(0), "entry 0x0E mismatch"
-    assert d[ENTRY_15:ENTRY_15+20] == bytes(20), "entry 0x15 not all-zero"
-    assert d[UI_ENTRY_5:UI_ENTRY_5+20] == be32(0)*3 + be32(4) + be32(0), "UI entry 5 mismatch"
+    check(d[SYS_ENTRIES + 0x0E*20:SYS_ENTRIES + 0x0F*20] == be32(0)*3 + be32(1) + be32(0), "entry 0x0E mismatch")
+    check(d[ENTRY_15:ENTRY_15+20] == bytes(20), "entry 0x15 not all-zero")
+    check(d[UI_ENTRY_5:UI_ENTRY_5+20] == be32(0)*3 + be32(4) + be32(0), "UI entry 5 mismatch")
 
     # free-ROM allocator ----------------------------------------------------
     cur = [FREE]
@@ -302,7 +323,7 @@ def patch(img):
             img_at = cur[0] - BASE; d[img_at:img_at+1] = b"\x00"; cur[0] += 1
         at = cur[0]; cur[0] += len(blob)
         d[at - BASE:at - BASE + len(blob)] = blob
-        assert cur[0] <= FREE_END, "free ROM overflow"
+        check(cur[0] <= FREE_END, "free ROM overflow")
         return at
 
     # 1. CLOCK label bitmap + label list ------------------------------------
@@ -312,7 +333,7 @@ def patch(img):
     # be32 zero (byte 8 == 0xFF marks the terminator); be32 bitmap at +0xC}
     labellist = struct.pack(">hhhh", 0, 0x0C, 0x20, 0x34) + be32(0) + be32(BMPA) \
               + bytes([0,0,0,0, 0,0,0,0, 0xFF,0,0,0, 0,0,0,0])   # terminator
-    assert len(labellist) == 32
+    check(len(labellist) == 32)
     LBLA = alloc(labellist, 4, "label list")
 
     # 2. layout: one switch row on param 0x15 + three empty columns ---------
@@ -324,7 +345,7 @@ def patch(img):
     titles = [struct.unpack_from(">I", d, TITLE_TABLE - BASE + 0x24 + 4 * i)[0] for i in range(5)]
     stock_rows = [unpack_bitmap(d[t - BASE:t - BASE + TITLE_W * TITLE_H // 8], TITLE_W, TITLE_H) for t in titles]
     for i, t in enumerate(titles):
-        assert d[t - BASE + 3 * 16 + 11] == 0x60 or sum(stock_rows[i][3][88:]) > 0, "title %d has no dots row" % i
+        check(dot_runs(stock_rows[i]) == STOCK_DOT_RUNS, "title %d: stock five-dot indicator not where expected" % i)
         d[t - BASE:t - BASE + TITLE_W * TITLE_H // 8] = pack_bitmap(retitle(stock_rows[i], i), TITLE_W)
     TITLEA = alloc(pack_bitmap(make_midi2_title(stock_rows[2]), TITLE_W), 4, "MIDI 2 title")
 
@@ -421,7 +442,7 @@ def patch(img):
         while cur[0] % 4:
             d[cur[0] - BASE] = 0x00; cur[0] += 1
         at = cur[0]; cur[0] += blob_len
-        assert cur[0] <= FREE_END, "free ROM overflow"
+        check(cur[0] <= FREE_END, "free ROM overflow")
         return at
 
     def place(at, blob, what=""):
@@ -444,17 +465,17 @@ def patch(img):
     record = bytes([1, 0, 0, 0]) + be32(LAYA) + be32(KEYA | 1) + be32(STAA | 1) + be32(VALA | 1)
     RECA = alloc(record, 4, "page 5 record")
 
-    keycode = build_key(KEYA);      assert len(keycode) == len(key_p)
-    stcode  = build_static(STAA, LBLA, TITLEA); assert len(stcode) == len(sta_p)
-    vcode   = build_value(VALA);    assert len(vcode) == len(val_p)
-    tcode   = build_trampoline(TRAMPA); assert len(tcode) == len(tram_p)
-    hcode   = build_rechook(HOOKA, RECA); assert len(hcode) == len(hook_p)
+    keycode = build_key(KEYA);      check(len(keycode) == len(key_p))
+    stcode  = build_static(STAA, LBLA, TITLEA); check(len(stcode) == len(sta_p))
+    vcode   = build_value(VALA);    check(len(vcode) == len(val_p))
+    tcode   = build_trampoline(TRAMPA); check(len(tcode) == len(tram_p))
+    hcode   = build_rechook(HOOKA, RECA); check(len(hcode) == len(hook_p))
     place(KEYA, keycode); place(STAA, stcode); place(VALA, vcode); place(TRAMPA, tcode); place(HOOKA, hcode)
 
     # 9. in-place patches ------------------------------------------------------
     def put_bl(file_off, target):
         off = target - (BASE + file_off + 4)
-        assert off % 2 == 0 and -0x400000 <= off < 0x400000, "bl out of range"
+        check(off % 2 == 0 and -0x400000 <= off < 0x400000, "bl out of range")
         o = off >> 1
         d[file_off:file_off+2]   = be16(0xF000 | ((o >> 11) & 0x7FF))
         d[file_off+2:file_off+4] = be16(0xF800 | (o & 0x7FF))
@@ -467,9 +488,11 @@ def patch(img):
     # 10. trailer checksums ----------------------------------------------------
     # The sampled lanes must be untouched (we start at 0x140004 for that);
     # balance the 8-bit byte-sum with one pad byte in free ROM.
-    assert refacefw.sampled_lanes(d) == stock_lanes, "patch touched a sampled checksum offset"
+    check(refacefw.sampled_lanes(d) == stock_lanes, "patch touched a sampled checksum offset")
     PADA = alloc(bytes([(stock_sum - refacefw.byte_sum(d) + 0xFF) & 0xFF]), 1, "byte-sum pad")   # pad replaces a 0xFF byte
-    assert refacefw.byte_sum(d) == stock_sum, "byte-sum balance failed"
+    check(refacefw.byte_sum(d) == stock_sum, "byte-sum balance failed")
+    used = img[FREE - BASE:cur[0] - BASE]
+    check(all(b == 0xFF for b in used), "free ROM %#x..%#x was not all erase fill in the stock image" % (FREE, cur[0]))
 
     placements = {"clock label bitmap": BMPA, "label list": LBLA, "layout": LAYA, "MIDI 2 title": TITLEA,
                   "key handler": KEYA, "static draw": STAA, "value draw": VALA, "trampoline": TRAMPA,
@@ -509,4 +532,4 @@ def main(argv):
     return 0
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    refacefw.run(main)

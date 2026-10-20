@@ -18,6 +18,7 @@ Usage: patch_clock.py <image.bin> <patched.bin> [<patched.mid>]
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import refacefw
+check = refacefw.check
 
 BASE = 0x02020000
 BL_ADDR = 0x0204145E
@@ -26,7 +27,7 @@ NOP2 = bytes.fromhex("46c046c0")          # mov r8,r8 ; mov r8,r8 (big-endian Th
 
 def decode_bl(b):
     h1 = (b[0] << 8) | b[1]; h2 = (b[2] << 8) | b[3]
-    assert (h1 & 0xF800) == 0xF000 and (h2 & 0xF800) == 0xF800, "not a BL"
+    check((h1 & 0xF800) == 0xF000 and (h2 & 0xF800) == 0xF800, "not a BL")
     imm = ((h1 & 0x7FF) << 12) | ((h2 & 0x7FF) << 1)
     if imm & 0x400000:
         imm -= 0x800000
@@ -36,15 +37,15 @@ def main(argv):
     if len(argv) < 3:
         print(__doc__); return 2
     img = bytearray(open(argv[1], "rb").read())
-    assert len(img) == 0x1E0000, "unexpected image size %d (wrong file?)" % len(img)
+    check(len(img) == 0x1E0000, "unexpected image size %d (wrong file?)" % len(img))
     off = BL_ADDR - BASE
     orig = bytes(img[off:off + 4])
     expect_ctx = bytes.fromhex("20f8")      # movs r0,#0xf8 just before
-    assert img[off - 4:off - 2] == expect_ctx, "context mismatch: wrong image?"
+    check(img[off - 4:off - 2] == expect_ctx, "context mismatch: wrong image?")
     if orig == NOP2:
         print("already patched")
     else:
-        assert BL_ADDR + 4 + decode_bl(orig) == BL_TARGET, "BL does not target the transmit function: %s" % orig.hex()
+        check(BL_ADDR + 4 + decode_bl(orig) == BL_TARGET, "BL does not target the transmit function: %s" % orig.hex())
         img[off:off + 4] = NOP2
         print("patched BL at %08x (file %#x): %s -> %s" % (BL_ADDR, off, orig.hex(), NOP2.hex()))
     open(argv[2], "wb").write(img)
@@ -54,4 +55,4 @@ def main(argv):
     return 0
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    refacefw.run(main)

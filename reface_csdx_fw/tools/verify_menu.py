@@ -163,13 +163,13 @@ def test_label_walk(img, P):
         e.call(pm.LABELS_DRAW, list_addr)
         return [(c[1][0], c[2]) for c in e.named("blit")]
     blits = run(STOCK_MIDI_LIST)
-    ok &= check([b for b, _ in blits] == STOCK_MIDI_BMPS and blits[0][1] == (0, 0xC, 0x3F, 0x3F),
+    ok &= check([b for b, _ in blits] == STOCK_MIDI_BMPS and bool(blits) and blits[0][1] == (0, 0xC, 0x3F, 0x3F),
                 "control: stock MIDI list -> 3 blits, bitmaps %s" % ", ".join("%#x" % b for b, _ in blits))
     blits = run(P["label list"])
     ok &= check(len(blits) == 1, "ours: exactly one blit (%d)" % len(blits))
     ok &= check(blits and blits[0][0] == P["clock label bitmap"],
                 "ours: bitmap pointer == CLOCK bitmap %#x" % P["clock label bitmap"])
-    ok &= check(blits and blits[0][1] == (0, 0x0C, 31, 0x3F), "ours: rect x=0 y=0x0C 32x52 -> %s" % (blits[0][1],))
+    ok &= check(blits and blits[0][1] == (0, 0x0C, 31, 0x3F), "ours: rect x=0 y=0x0C 32x52 -> %s" % (blits[0][1] if blits else None,))
     # negative control: the pre-4e9eecb 28-byte list (bitmap at +8, 0xFF at
     # +20) followed by the layout bytes, exactly as it sat in free ROM.  The
     # stock walker must be seen to blit from address 0 and never terminate.
