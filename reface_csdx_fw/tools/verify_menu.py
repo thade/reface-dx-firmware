@@ -82,9 +82,9 @@ class Emu:
         self.uc.mem_write(addr, b"\x47\x70")
         self.stubs[addr] = (name, ret, capture)
 
-    def trace(self, addr, name):
-        """Log entry to addr without altering it."""
-        self.traces[addr] = name
+    def trace(self, addr, name, capture=None):
+        """Log entry to addr without altering it (capture(uc) -> extra, like stub)."""
+        self.traces[addr] = (name, capture)
 
     def _hook(self, uc, addr, size, _):
         if addr in self.stubs:

@@ -85,10 +85,13 @@ byte documented as used by either model must be avoided.
 | 4 | 00 80 00 00 (UI group) | 1 | 0x2C | 0x020B6B34 | 0x0414815C |
 
 `0x02042EEC(base, count, size, entries, buf, stride)` registers each group at
-runtime; `0x02042E2C(addr)` finds the registration; the SysEx read/write
-worker 0x020431BC computes `storage = buf + (addr − base)·stride` and memcpys
-— **no per-entry validation**, so all 32 SYSTEM addresses 00–1F are readable
-and writable through the parameter engine.
+runtime; `0x02042E2C(addr)` finds the registration; the generic store
+`0x0204359C(addr, value)` and the block worker 0x020431BC compute
+`storage = buf + (addr − base)·stride` with **no per-entry validation**, so
+the engine itself can address all 32 SYSTEM bytes 00–1F.  (0x020431BC has
+no caller in the image; the paths that actually feed values in — the
+setter's message receiver and the SysEx parser — dispatch through
+per-address tables that stop at 0x13, see §2.3.)
 
 The per-parameter **entries** tables are arrays of 20-byte records, one per
 parameter in the group (the engine indexes them by `param*20` at 0x020436C4,
@@ -141,6 +144,55 @@ item at `[event+2]` with op=2 — but only for layout rows whose type byte is
 `verify_menu.py` runs the registrar 0x020425F0 and 0x02045988 and then the
 real setter to prove the clamps above (stock: `set(0x15,1,1)` posts nothing;
 patched: posts value 1).
+
+#### Where the store actually happens (traced and emulated 2026-10-20)
+
+The setter chain above **never writes the settings block** for a SYSTEM
+parameter; 0x02043684 only computes old/new and 0x02045544 calls the three
+hooks at 0x041121B8.  Hook [1] 0x02045875 posts the type-0x0B message
+`{addr hi, mid, lo, new(u8), new(u16), source(u16), op(u16)}` with
+0x02037A34 into the ring at **0x04091994** (header `{write idx, read idx}`,
+16-byte entries from +8: type at +0, 12-byte payload at +4; the post wakes
+the MIDI task with 0x02038418).  The consumer is the MIDI task loop at
+0x02038348: pop with 0x02036CA0, bookkeeping 0x02036A6C, then a jump through
+table 0x0209F1CC indexed by type (0x0B → 0x020383B6, SysEx types 3/4 →
+0x0203837E → parser 0x02037820).  The type-0x0B handler 0x02036C84 calls
+0x0203A65C(payload) when the model flag `[0x04095994+0x25]` is 1 (DX; set at
+task init from 0x020365D0, the SysEx parser switches on the same flag between
+model id 3 = CS and 5 = DX).  0x0203A65C dispatches SYSTEM parameters
+(hi:mid == 0) through **table 0x0209FCBC, only for `lo <= 0x13`**
+(`cmp r3,#0x13; bls` at 0x0203A676); each entry, e.g. 0x0E → 0x02039C64,
+calls `0x020397D4(addr, value)` → `0x0204359C` (the real store) plus side
+effects and the UI refresh 0x02045A90.  Addresses 0x14–0x1F fall through
+and are **silently dropped**.
+
+Emulated with the real loop (`ui_sim.UISim(receiver="real")`,
+`verify_ui.test_receiver`): stock MIDI page key 0x14 posts `00 00 0E 01`
+and the live byte 0x0E becomes 1; the patched page-5 key 0x12 posts
+`00 00 15 01`, the handler returns, and **byte 0x15 stays 0**.  The earlier
+`verify_ui` toggle/persistence results relied on `ui_sim` applying the
+store by hand (now `receiver="manual"`, kept for the UI-side checks).
+Consequence for the current clockmenu build: the CLOCK toggle has no
+effect on hardware (value stays ON, F8 keeps running, nothing becomes
+dirty, so no flash write).  The 0x0080 (UI) group is the exception: when
+hook [1] returns 1 the setter stores it synchronously via 0x0204359C at
+0x020455C8.  A fix therefore has to make the page-5 key handler store
+0x15 itself (e.g. call 0x0204359C(0x000015, v) before/after the setter,
+which still posts the message for the SysEx-out side effect) — the table
+bound is a `cmp` immediate and cannot be extended in place.
+
+The same per-address pattern governs SysEx *reception* (DX handler
+0x0203A810, reached from the parser for messages `F0 43 cmd 7F 1C 05 …`):
+a parameter change (`cmd = 1n`) for the SYSTEM group goes through table
+0x0209FD0C, again `lo <= 0x13` (0x0203A8C8), so **0x15 is ignored on stock
+and patched alike**; the system bulk-dump block (`cmd = 0n`, address
+`00 00 00`, 32 data bytes) is unpacked by 0x0203A214 **one parameter at a
+time** (0x00, 0x01, 0x02–0x05, 0x06, 0x07, 0x08/09, 0x0A–0x0E, 0x11–0x13)
+and also skips 0x15; the `11 00 00` block commits the live block to flash
+(0x0203A10C → 0x02044460(1)); a system dump *request* (`cmd = 2n`, `00 00
+00`) answers with the whole 32-byte live block (0x0203A284 memcpys
+0x041480A0, 45-byte message with checksum), so byte 0x15 **is**
+transmitted.  All of this is exercised by `tools/verify_paths.py`.
 
 ## 3. FUNCTION pages
 
@@ -489,9 +541,51 @@ stubbed and everything else running as compiled:
 * differential fuzz: random key sequences on stock and patched never fault,
   diverge only at the extra page, and leave all settings bytes other than
   0x15 identical
+* **store receiver (real)**: with `UISim(receiver="real")` the setter's
+  post runs for real and the ring is drained through the MIDI task's own
+  pop/dispatch code after every event.  Control: stock MIDI page key 0x14 →
+  byte 0x0E = 1 through 0x02036C84 → 0x0203A65C → 0x02039C64 →
+  0x020397D4.  **Patched page 5 key 0x12: the message `00 00 15 01` is
+  dispatched and dropped; byte 0x15 stays 0 (FAIL, reported — §2.3).**  The
+  toggle/persistence/screen checks above run with `receiver="manual"` and
+  only cover the UI side.
+
+`verify_paths.py` (same harness) covers the two non-UI paths to byte 0x15,
+stock image as control:
+
+* boot NV load: an NV image with both magics, SYSTEM shadow byte 0x15 = 1
+  (plus 0x0A = 0x20, 0x0E = 1) and a zeroed group-0x784000 shadow is placed
+  at flash 0x02200000 and the real 0x02020E64 runs (only the flash-driver
+  query 0x020442E4, the flash writer 0x020897D8, IRQ and sleep stubbed; the
+  halfword copier 0x02044244 runs as compiled).  Both images: boot returns
+  2, the live block has 0x15 = 1, 0x0E = 1, 0x0A = 0x20; the version
+  fix-ups 0x0204292C/0x02042944/0x02042974 store only SYSTEM 0x08 (0x11–0x13
+  when `[0x04091984+6]` = 1) and never 0x15; live differs from the stored
+  shadow only at the tempo byte 0x09.  Group-0x784000 byte 0 ≠ 0 takes the
+  no-fix-up branch (returns 8) with 0x15 intact.  Bad leading or trailing
+  magic: 0x02042A7C defaults, exactly one flash write of an image with
+  valid magic and 0x15 = 0, live 0x15 = 0.
+* SysEx (through the type-3 ring message and the real parser): control
+  parameter change `F0 43 10 7F 1C 05 00 00 0E 01 F7` stores 0x0E on both
+  images; parameter change for 0x15 with values 0/1/2 never faults, never
+  hangs and **stores nothing on either image** (FAIL against the "patched
+  stores the clamped value" expectation — the receive table stops at 0x13);
+  system dump request → 45-byte bulk dump `F0 43 00 7F 1C 00 24 05 00 00 00
+  …` equal to the live block with a valid checksum, byte 0x15 included;
+  system bulk block stores 0x0A/0x0E (control) but **skips 0x15 (FAIL, same
+  cause)**; the `11 00 00` block commits the live block to flash once with
+  the NV shadow carrying 0x15; no assert/fatal logger (0x02020750) call in
+  any sequence.
 
 ### Known limitations / open questions
 
+* **BLOCKER (2026-10-20, emulation): the toggle never reaches the settings
+  block.**  The setter posts the change as a message and the receiver stores
+  SYSTEM parameters only for addresses 0x00–0x13 (§2.3).  On hardware the
+  CLOCK item will stay ON and F8 will keep running.  The page-5 key handler
+  must store byte 0x15 itself (0x0204359C) in addition to calling the
+  setter.  Byte 0x15 is likewise not writable by SysEx parameter change or
+  bulk dump (stock behaviour; the bulk dump *transmits* it).
 * **Which physical control sends id 0x12**: the leftmost DATA ENTRY switch
   (column 0; the Owner's Manual uses it to toggle AUTO P.OFF on the System
   page).  Confirmed by emulation of the real key routing; hardware check
@@ -541,9 +635,21 @@ sector after this image):
   migration.  Not on every setter call and not at power-off, so a change
   made on the FUNCTION screen is lost if the unit is switched off while
   still on that screen — same as stock behaviour for any setting.
-* Boot: `0x02020E64` → `0x020443DC` copies flash → RAM and checks both
-  magics; if invalid, defaults are written (0x02042A7C, 0x15 → 0); then
-  `0x0204281C` restores the live block.
-* Emulated end to end in `verify_ui.py`: toggle on page 5, leave FUNCTION →
-  NV shadow byte 0x15 = 1 and exactly one flash write; stock leave without
-  change → no write; re-enter → page 5.
+* Boot: `0x02020E64` → `0x020443DC`: driver query 0x020442E4, halfword copy
+  flash 0x02200000 → RAM 0x04000000 (0x02044244, 0x1800 bytes), magic check
+  0x02044318 (both words must be 0xDEADFACE); if invalid, 0x02042A7C writes
+  the defaults (0x15 → 0) and 0x02044358 → 0x020897D8 writes the image back
+  (0x02020750 is called only if that write fails).  Then the registrar
+  0x020426C8, the voice copy 0x02042738, `0x0204281C` (SYSTEM shadow →
+  live) and `0x0204289C` (group 0x784000 shadow → live).  If group-0x784000
+  byte 0 is 0 the version fix-ups run: 0x0204292C re-stores tempo 0x08 from
+  its default, 0x02042944 stores 0x11/0x12 when `[0x04091984+6]` = 1,
+  0x02042974 stores 0x13, then 0x02042B9C and the dirty checks
+  0x020444CC(5)/(4) decide whether to write.  None of them touches 0x15.
+* Emulated end to end: `verify_ui.py` (manual store) — toggle on page 5,
+  leave FUNCTION → NV shadow byte 0x15 = 1 and exactly one flash write;
+  stock leave without change → no write; re-enter → page 5.
+  `verify_paths.py` — the boot path above with a real NV image at
+  0x02200000 restores 0x15 = 1 on stock and patched, defaults give 0 on bad
+  magic (§8 for the full list), and the SysEx `11 00 00` commit block writes
+  the live block including 0x15 to flash.

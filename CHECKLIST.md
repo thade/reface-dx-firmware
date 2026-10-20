@@ -74,7 +74,13 @@ behaves like stock until you turn the clock off.
    columns 1 to 3 blank.
 5. Toggle it with the **leftmost DATA ENTRY switch** (the one that toggles
    AUTO P.OFF on the System page).  MIDI monitor: F8 stops immediately (FE
-   Active Sensing continues).  Toggle again: F8 resumes.  Each toggle goes
+   Active Sensing continues).  Toggle again: F8 resumes.
+   **Expected to fail on builds up to and including `63a7154c…c847`:**
+   emulation of the firmware's store receiver (MENU_RE §2.3,
+   `verify_ui.py` "store receiver") shows the toggle's parameter message is
+   dropped — the value should stay ON and F8 should keep running, with no
+   flash write.  If that is what you see, it confirms the emulation; the
+   fix is a synchronous store in the page-5 key handler.  Each toggle goes
    through the stock parameter setter, so the monitor may also show a short
    Yamaha SysEx parameter change for system address 0x15, the same thing
    the MIDI page does for CONTROL / LOCAL; that is expected, not a fault.
