@@ -137,6 +137,14 @@ def test_screen(stock, img, P):
     stock_sim = fresh(stock, "manual"); goto_page(stock_sim, 2); stock_sim.render()
     stock_off = stock_sim.lcd.ink(65, 38, 95, 63)   # CONTROL column, value off
     ok &= check(off_cell == stock_off, "our off graphic has the same ink as stock MIDI page's CONTROL off cell (%d px)" % stock_off)
+    # page indicator: six dot cells at x = 82 + 8*i, rows 3..8; the filled one must be the current page
+    def dots(l): return [l.ink(82 + 8 * i, 3, 87 + 8 * i, 8) for i in range(6)]
+    sim = fresh(img); good = True; seen = {}
+    for pg in range(6):
+        goto_page(sim, pg); sim.render(); dk = dots(sim.lcd); seen[pg] = dk
+        good &= all(v > 0 for v in dk) and dk.index(max(dk)) == pg
+    ok &= check(good, "all six pages show six dots with the current page filled -> page 5 dots %s" % seen[5])
+    ok &= check(sim.lcd.ink(71, 3, 75, 9) > 8, "page 5 title carries the 2 glyph")
     return ok
 
 def test_fuzz(stock, img, P, seed, n):
