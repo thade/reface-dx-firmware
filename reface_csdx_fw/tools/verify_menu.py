@@ -7,7 +7,8 @@ window, and drives the new code the way the firmware would.  Stock routines
 are used as control cases so a harness mistake cannot pass silently.
 
 Checks (see MENU_RE.md section 8):
-  static draw   calls title draw (0,0,2) and label draw (our list)
+  static draw   blits our own "MIDI 2" title bitmap (128x12 at 0,0, after the
+                LCD-ready check) and calls label draw (our list)
   label list    walked by the REAL stock routine 0x0203C254: exactly one blit,
                 bitmap == CLOCK bitmap, rect x=0 y=0x0C 32x52; the pre-fix
                 layout (bitmap at +8) is shown to blit from address 0
@@ -145,12 +146,17 @@ def test_static_draw(img, P):
                 and [c[1][0] for c in e.named("labels")] == [STOCK_MIDI_LIST],
                 "control: stock MIDI static draw -> title(0,0,2), labels(stock list)")
     e = Emu(img)
-    e.stub(pm.TITLE_DRAW, "title"); e.stub(pm.LABELS_DRAW, "labels")
+    e.stub(pm.LCD_READY, "ready", ret=1); e.stub(BLIT, "blit", capture=rect_capture); e.stub(pm.LABELS_DRAW, "labels")
     e.call(P["static draw"])
-    ok &= check([c[1][:3] for c in e.named("title")] == [(0, 0, pm.MIDI_ICON)],
-                "ours: title draw (0, 0, MIDI icon)")
+    blits = [(c[1][0], c[2]) for c in e.named("blit")]
+    ok &= check(blits == [(P["MIDI 2 title"], (0, 0, 127, 11))],
+                "ours: blits our MIDI 2 title bitmap at (0,0) 128x12 -> %s" % blits)
     ok &= check([c[1][0] for c in e.named("labels")] == [P["label list"]],
                 "ours: label draw with our list %#x" % P["label list"])
+    e = Emu(img)
+    e.stub(pm.LCD_READY, "ready", ret=0); e.stub(BLIT, "blit", capture=rect_capture); e.stub(pm.LABELS_DRAW, "labels")
+    e.call(P["static draw"])
+    ok &= check(e.named("blit") == [] and len(e.named("labels")) == 1, "ours: LCD not ready -> no title blit (stock convention), labels still called")
     return ok
 
 def test_label_walk(img, P):

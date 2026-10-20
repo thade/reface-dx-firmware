@@ -10,7 +10,7 @@ Three re-signed copies of Yamaha's updater live under `reface_csdx_fw/updater/`
 | `updater/clockmenu/reface updater.app` | MIDI 2 page patch (`tools/patch_clock_menu.py`) | the menu switch mod |
 | `updater/orig/.../reface updater.app` | untouched Yamaha app | recovery |
 
-Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `b0e728ef…fddd`.
+Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `c5ea5147…f709`.
 
 **Result: both phases passed on 2026-10-19. See Record at the bottom.**
 
@@ -53,7 +53,7 @@ Built and emulation-verified (`tools/verify_menu.py` and `tools/verify_ui.py`:
 the real parameter setter, the real UI event path from the FUNCTION button
 to the flash save, and the rendered screen). **Flashed and verified on hardware 2026-10-20, see Record.**  Read MENU_RE.md §8 for what the patch changes before
 running it.  The app is `updater/clockmenu/reface updater.app` (payload
-SHA-256 `b0e728ef…fddd`).  The 2026-10-20 reviews and emulation found and
+SHA-256 `c5ea5147…f709`).  The 2026-10-20 reviews and emulation found and
 fixed six problems in earlier builds (clamped setting, clamped page index,
 wrong key id, trailer checksum, dropped store, frozen Voice page layout);
 do not flash any clockmenu payload with a different hash.
@@ -69,9 +69,9 @@ behaves like stock until you turn the clock off.
 3. Press FUNCTION repeatedly: Voice → Tuning → MIDI → System → Job →
    **MIDI 2** → Voice.  (Emulation of the real UI code shows the FUNCTION
    button is micom key 0x0B and its cycler honours the new page count.)
-4. On MIDI 2: the title bar reads "MIDI" with the MIDI icon (the new page
-   reuses it), one item labelled "CLOCK" in column 0 with the ON graphic,
-   columns 1 to 3 blank.
+4. On MIDI 2: the title bar reads "MIDI 2" with six page dots (the sixth
+   filled; every page now shows six dots), one item labelled "CLOCK" on one
+   line in column 0 with the stock ON graphic, columns 1 to 3 blank.
 5. Toggle it with the **leftmost DATA ENTRY switch** (the one that toggles
    AUTO P.OFF on the System page).  MIDI monitor: F8 stops immediately (FE
    Active Sensing continues).  Toggle again: F8 resumes.

@@ -447,8 +447,8 @@ New code/data in free ROM from 0x02160004 (file 0x140004; 0x140000..3 is a
 sampled checksum offset and is left alone), placed in order: CLOCK label
 bitmap (32×52 1bpp, "CLOC"/"K" in the stock font style with the left rule),
 label list, layout (row `{0,0,0x15,·,4}` + three 0x83 rows), key handler,
-static draw (MIDI title icon + our label list), value draw (ON unless the
-flag is 1), clock trampoline, the page-apply record hook, our page-5
+static draw (our "MIDI 2" title bitmap + our label list), value draw (ON
+unless the flag is 1), clock trampoline, the page-apply record hook, our page-5
 record (20 bytes), and one byte-sum pad.  The stock five-record list stays
 in RAM so the Part Mode layout swap (§3.1) keeps working.  All functions are assembled by a small
 big-endian Thumb-1 assembler in the script (push/pop, movs, ldr-literal,
@@ -463,6 +463,7 @@ In-place patches (5 sites):
 | 0x215C8 | `bl 0x02041438` | `bl trampoline` | clock send gated on settings[0x15] |
 | 0x97188 | SYSTEM entry 0x15 `{0,0,0,0,0}` | `{0,0,0,1,0}` | setter accepts 0 and 1 for byte 0x15 (stock clamps to 0) |
 | 0x96BA4 | UI entry 5 max `4` | `5` | page-index parameter accepts 5 |
+| 0x95AD4…0x95DD4 | five 128×12 title bitmaps, five dots | six dots, text 6 px left | page indicator shows 6 pages on every page (data only) |
 
 New page record: `{01 (one column), layout, key, static, value}`.  Key
 handler: event 1 asserts page param 5; event 3 with `[evt]==2,
@@ -615,8 +616,11 @@ stock image as control:
   literal into it was never an option.
 * The page-6 value draw paints only column 0; the renderer clears the
   frame on every page change (§6), so columns 1–3 are blank — verified on
-  the emulated LCD arriving from the Job page.  The title bar reuses the
-  MIDI page's icon and so reads "MIDI", not "MIDI 2".
+  the emulated LCD arriving from the Job page.  The title bar is our own
+  128×12 bitmap ("MIDI 2" in the stock title font, six page dots with the
+  sixth filled), blitted by the static draw the way 0x0203C86C does; the
+  five stock title bitmaps are rewritten in place with six dots (text
+  shifted 6 px left to make room) so the indicator is consistent.
 * Panel DATA ENTRY switch editing of the type-4 item (op=2 path) is not
   wired for switches in stock firmware; the intended interaction is the
   column-0 key or the page toggle itself.

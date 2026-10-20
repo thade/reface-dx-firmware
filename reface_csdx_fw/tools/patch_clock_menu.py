@@ -94,7 +94,11 @@ ENTRY_15   = SYS_ENTRIES + CLOCK_FLAG * 20   # 0x97188
 UI_ENTRY_5 = UI_ENTRIES + 5 * 20             # 0x96B98
 OUR_PAGE   = 5                    # new page index
 OUR_KEY_ID = 0x12                 # column-0 key id (ids 0x12-0x15 = columns 0-3)
-MIDI_ICON  = 2                    # title icon index 2 == the MIDI page icon
+BLIT       = 0x020291E8           # (bitmap, rect{x0,y0,x1,y1}*) 1bpp blit into the framebuffer
+LCD_READY  = 0x020294A8           # (0) -> nonzero when the LCD may be drawn
+TITLE_TABLE= 0x020A494C           # +0x24 + 4*page -> 128x12 title bitmap (pages 0-4)
+TITLE_W, TITLE_H = 128, 12
+NPAGES     = 6
 
 def be16(v): return struct.pack(">H", v)
 def be32(v): return struct.pack(">I", v)
@@ -134,6 +138,10 @@ class Asm:
         assert 0 < imm < 32
         self._h(0x0000 | (imm << 6) | (rm << 3) | rd)
     def add3(self, rd, rn, rm): self._h(0x1800 | (rm << 6) | (rn << 3) | rd)
+    def sub_sp(self, imm): assert imm % 4 == 0 and imm < 512; self._h(0xB080 | (imm >> 2))
+    def add_sp(self, imm): assert imm % 4 == 0 and imm < 512; self._h(0xB000 | (imm >> 2))
+    def str_sp(self, rt, imm): assert imm % 4 == 0 and imm < 1024; self._h(0x9000 | (rt << 8) | (imm >> 2))
+    def add_rd_sp(self, rd, imm=0): assert imm % 4 == 0 and imm < 1024; self._h(0xA800 | (rd << 8) | (imm >> 2))
     def b(self, tgt, cond=None):
         kinds = {None: 0xE0, "eq": 0xD0, "ne": 0xD1, "hi": 0xD8, "lo": 0xD3,
                  "ge": 0xDA, "lt": 0xDB, "gt": 0xDC, "le": 0xDD}
@@ -200,8 +208,7 @@ def make_clock_label():
                 for gx, c in enumerate(line):
                     if c == "#":
                         rows[y0 + gy][x0 + ci * 6 + gx] = "#"
-    text("CLOC", 10, 2)
-    text("K",    19, 2)
+    text("CLOCK", 10, 2)                       # 5 glyphs x 6 px pitch = x 2..31
     for y in range(10, 32):                    # left rule like stock labels
         rows[y][0] = "#"
     out = bytearray()
@@ -214,6 +221,53 @@ def make_clock_label():
             bs.append(b)
         out += bytes(bs)
     return bytes(out)
+
+# ----------------------------------------------------------- title bars ----
+DOT_FILLED = ["..##..", ".####.", "######", "######", ".####.", "..##.."]
+DOT_EMPTY  = ["..##..", ".#..#.", "#....#", "#....#", ".#..#.", "..##.."]
+DOT_X0, DOT_PITCH, DOT_Y = 82, 8, 3          # six dots end at x = 127 like the stock five
+GLYPH_2 = [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"]
+
+def unpack_bitmap(data, w, h):
+    stride = (w + 7) // 8
+    return [[(data[y * stride + (x >> 3)] >> (7 - (x & 7))) & 1 for x in range(w)] for y in range(h)]
+
+def pack_bitmap(rows, w):
+    out = bytearray()
+    for row in rows:
+        for xb in range((w + 7) // 8):
+            b = 0
+            for bit in range(8):
+                x = xb * 8 + bit
+                b = (b << 1) | (row[x] if x < w else 0)
+            out.append(b)
+    return bytes(out)
+
+def retitle(rows, page, npages=NPAGES, shift=6):
+    """Rebuild a stock 128x12 title: keep the text (columns < 88) shifted
+    `shift` px left, replace the five dots with `npages` dots, `page` filled."""
+    out = [[0] * TITLE_W for _ in range(TITLE_H)]
+    for y in range(TITLE_H):
+        for x in range(88):
+            if rows[y][x] and x - shift >= 0:
+                out[y][x - shift] = 1
+    for i in range(npages):
+        g = DOT_FILLED if i == page else DOT_EMPTY
+        for gy, line in enumerate(g):
+            for gx, c in enumerate(line):
+                if c == "#": out[DOT_Y + gy][DOT_X0 + i * DOT_PITCH + gx] = 1
+    return out
+
+def make_midi2_title(midi_rows):
+    """"MIDI 2": the stock MIDI glyphs (columns 55..74) plus a 2 in the same font."""
+    rows = [[0] * TITLE_W for _ in range(TITLE_H)]
+    for y in range(TITLE_H):
+        for x in range(55, 75):
+            rows[y][x] = midi_rows[y][x]
+    for gy, line in enumerate(GLYPH_2):
+        for gx, c in enumerate(line):
+            if c == "#": rows[3 + gy][77 + gx] = 1
+    return retitle(rows, NPAGES - 1)
 
 # ------------------------------------------------------------------ main -----
 def patch(img):
@@ -264,6 +318,14 @@ def patch(img):
     rows += bytes([0,0x83,0x83,0, 0,0,0,0, 0,0,0,0, 0,0,0,0]) * 3
     LAYA = alloc(rows, 4, "layout")
 
+    # 2b. title bars: six page dots everywhere, and a "MIDI 2" title of our own
+    titles = [struct.unpack_from(">I", d, TITLE_TABLE - BASE + 0x24 + 4 * i)[0] for i in range(5)]
+    stock_rows = [unpack_bitmap(d[t - BASE:t - BASE + TITLE_W * TITLE_H // 8], TITLE_W, TITLE_H) for t in titles]
+    for i, t in enumerate(titles):
+        assert d[t - BASE + 3 * 16 + 11] == 0x60 or sum(stock_rows[i][3][88:]) > 0, "title %d has no dots row" % i
+        d[t - BASE:t - BASE + TITLE_W * TITLE_H // 8] = pack_bitmap(retitle(stock_rows[i], i), TITLE_W)
+    TITLEA = alloc(pack_bitmap(make_midi2_title(stock_rows[2]), TITLE_W), 4, "MIDI 2 title")
+
     # 3..8 build code in free ROM.  Each function is assembled twice: once
     # with org 0 to learn its size (branch/literal encodings never change
     # size), the address is reserved, then it is re-assembled at its final
@@ -299,14 +361,24 @@ def patch(img):
         k.pop([3]); k.pop([1]); k.bx(1)
         return k.assemble()
 
-    def build_static(org, label_list):
+    def build_static(org, label_list, title_bmp):
+        # title: blit our 128x12 bitmap at (0,0) the way 0x0203C86C does,
+        # rect {x0, y0, x1, y1} built on the stack; then the label list
         s = Asm(org)
-        s.push([3], lr=True)
-        s.movs(0, 0); s.movs(1, 0); s.movs(2, MIDI_ICON)
-        s.bl(TITLE_DRAW)
+        s.push([4], lr=True)
+        s.sub_sp(16)
+        s.movs(0, 0); s.bl(LCD_READY)
+        s.cmp(0, 0); s.b("labels", "eq")
+        s.movs(3, 0); s.str_sp(3, 0); s.str_sp(3, 4)
+        s.movs(3, TITLE_W - 1); s.str_sp(3, 8)
+        s.movs(3, TITLE_H - 1); s.str_sp(3, 12)
+        s.ldr(0, title_bmp); s.add_rd_sp(1, 0)
+        s.bl(BLIT)
+        s.label("labels")
         s.ldr(0, label_list)
         s.bl(LABELS_DRAW)
-        s.pop([3]); s.pop([1]); s.bx(1)
+        s.add_sp(16)
+        s.pop([4]); s.pop([1]); s.bx(1)
         return s.assemble()
 
     def build_value(org):
@@ -356,7 +428,7 @@ def patch(img):
     # probe sizes, reserve addresses, rebuild at final addresses
     key_p  = build_key(0)
     KEYA   = reserve(len(key_p))
-    sta_p  = build_static(0, LBLA)
+    sta_p  = build_static(0, LBLA, TITLEA)
     STAA   = reserve(len(sta_p))
     val_p  = build_value(0)
     VALA   = reserve(len(val_p))
@@ -370,7 +442,7 @@ def patch(img):
     RECA = alloc(record, 4, "page 5 record")
 
     keycode = build_key(KEYA);      assert len(keycode) == len(key_p)
-    stcode  = build_static(STAA, LBLA); assert len(stcode) == len(sta_p)
+    stcode  = build_static(STAA, LBLA, TITLEA); assert len(stcode) == len(sta_p)
     vcode   = build_value(VALA);    assert len(vcode) == len(val_p)
     tcode   = build_trampoline(TRAMPA); assert len(tcode) == len(tram_p)
     hcode   = build_rechook(HOOKA, RECA); assert len(hcode) == len(hook_p)
@@ -399,7 +471,7 @@ def patch(img):
     report = []
     report.append("free-ROM placements:")
     for nm, a_ in (("clock label bitmap", BMPA), ("label list", LBLA),
-                   ("layout", LAYA), ("key handler", KEYA), ("static draw", STAA),
+                   ("layout", LAYA), ("MIDI 2 title", TITLEA), ("key handler", KEYA), ("static draw", STAA),
                    ("value draw", VALA), ("trampoline", TRAMPA), ("record hook", HOOKA),
                    ("page 5 record", RECA), ("byte-sum pad", PADA)):
         report.append("  %-20s %#08x (file %#x)" % (nm, a_, a_ - BASE))
@@ -409,6 +481,7 @@ def patch(img):
     report.append("  clock bl @ %#x -> trampoline" % CLOCK_BL)
     report.append("  SYSTEM entry 0x15 @ %#x: max 0 -> 1" % ENTRY_15)
     report.append("  UI entry 5 @ %#x: max 4 -> 5" % UI_ENTRY_5)
+    report.append("  title bitmaps @ %s: five dots -> six (text shifted 6 px left)" % ", ".join("%#x" % t for t in titles))
     report.append("trailer: sampled lanes %s unchanged, byte-sum %#04x unchanged"
                   % (stock_lanes.hex(), stock_sum))
     report.append("\nkey handler:\n" + dis(KEYA, keycode))
