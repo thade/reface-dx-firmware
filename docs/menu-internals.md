@@ -471,6 +471,9 @@ handler: event 1 asserts page param 5; event 3 with `[evt]==2,
 like the stock MIDI page does for 0x0E/0x06 on 0x14/0x15, **then stores the
 byte directly** (`strb` into 0x041480A0+0x15) because the type-0x0B store
 handler 0x0203A65C only applies addresses ≤ 0x13 (§2.3), then refreshes.
+The new value is kept across the setter call with `push {r2,r4}` / `pop
+{r2,r4}` rather than `push {r2}`, so the stack stays 8-byte aligned at the
+call as it does in the trampoline.
 Trampoline: `bx lr` when the flag is 1, else `push {r4,lr}; bl 0x02041438;
 pop {r4}; pop {r3}; bx r3` (r0 tick argument preserved, stack stays
 8-aligned — the caller never reads r0/r3 after the call).
@@ -601,12 +604,12 @@ stock image as control:
   the switch is a panel setting.
 * **Which physical control sends id 0x12**: the leftmost DATA ENTRY switch
   (column 0; the Owner's Manual uses it to toggle AUTO P.OFF on the System
-  page).  Confirmed by emulation of the real key routing; hardware check
-  still pending.  The per-key/lamp loops at 0x02044620 and 0x02045150 cover
-  0x16 entries, so ids ≥ 0x16 do not exist.
+  page).  Confirmed by emulation of the real key routing and on the DX on
+  2026-10-20 (hardware-tests.md Phase 3).  The per-key/lamp loops at
+  0x02044620 and 0x02045150 cover 0x16 entries, so ids ≥ 0x16 do not exist.
 * **Persistence of byte 0x15**: traced (§9) and emulated — saved with the
-  whole block when leaving FUNCTION, restored at boot.  Hardware check:
-  toggle, leave FUNCTION, power-cycle.
+  whole block when leaving FUNCTION, restored at boot.  Confirmed on the DX
+  on 2026-10-20: toggle, leave FUNCTION, standby-cycle, the setting stayed.
 * **Resolved (2026-10-20): Voice page layout.**  An earlier build relocated
   the page list into free ROM, which froze page 0 on the mono layout because
   the Part Mode swap (§3.1) writes RAM 0x04011024.  The list now stays in

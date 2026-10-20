@@ -183,8 +183,7 @@ def main(argv):
     path = args[0] if args else os.path.join(HERE, "..", "out", "reface_csdx_main_v130.bin")
     stock = open(path, "rb").read()
     with contextlib.redirect_stdout(io.StringIO()):
-        img, report = pm.patch(stock)
-    P = vm.placements(report)
+        img, _report, P = pm.patch(stock)
     results = [f(stock, img, P) for f in (test_boot, test_sysex)]
     print("\nALL OK" if all(results) else "\nFAILURES")
     return 0 if all(results) else 1

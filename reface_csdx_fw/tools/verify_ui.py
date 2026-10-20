@@ -48,8 +48,7 @@ def test_cycling(stock, img, P):
         want = [(7, i % n) for i in range(n + 2)]
         ok &= check(seq == want, "%s: %s" % (name, seq))
     sim = fresh(img); goto_page(sim, 5)
-    ours = P["page 5 record"] if "page 5 record" in P else P["page list"] + 5 * 0x14   # ROM record via hook, or relocated list
-    ok &= check(sim.state()["record"] == ours, "patched page 5 record is ours (%#x)" % sim.state()["record"])
+    ok &= check(sim.state()["record"] == P["page 5 record"], "patched page 5 record is ours (%#x)" % sim.state()["record"])
     return ok
 
 def test_receiver(stock, img, P):
@@ -188,7 +187,7 @@ def main(argv):
     nfuzz = int(argv[argv.index("--fuzz") + 1]) if "--fuzz" in argv else 40
     path = args[0] if args else os.path.join(HERE, "..", "out", "reface_csdx_main_v130.bin")
     stock = open(path, "rb").read()
-    img, report = pm.patch(stock); P = vm.placements(report)
+    img, _report, P = pm.patch(stock)
     results = [f(stock, img, P) for f in (test_cycling, test_receiver, test_toggle, test_cursor, test_persistence, test_screen)]
     results.append(test_fuzz(stock, img, P, seed, nfuzz))
     print("\nALL OK" if all(results) else "\nFAILURES")

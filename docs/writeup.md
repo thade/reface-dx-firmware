@@ -129,8 +129,8 @@ stock copy launches and logs that it loaded the replaced payload.
 - Resolved: the bootloader accepted the patched image. Update mode is
   entered from the keyboard before the main image runs, so a broken main
   image remains recoverable by reflashing Yamaha's untouched app.
-- The patch is permanent for that firmware; a later version could gate the
-  call on the existing "MIDI Control" flag to give a menu switch.
+- The no-clock patch is permanent for that firmware. The MIDI 2 page patch
+  is the menu switch that replaces it.
 - Exact ARM core is unconfirmed (treat as ARMv5T); irrelevant to this patch.
 
 ## Next

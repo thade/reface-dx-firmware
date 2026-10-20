@@ -17,17 +17,27 @@ function layout() {
   $('sendBox').hidden = !canSend || !made;
   $('sendWait').hidden = !canSend || Boolean(made);
   $('noMidi').hidden = canSend;
+  $('downloadBox').hidden = !made;
+  $('downloadWait').hidden = Boolean(made);
 }
 
+const LOAD_FAIL = 'This page couldn\'t load the data it needs. Check your internet connection and reload the page.';
 function variant() { return document.querySelector('input[name="variant"]:checked').value; }
+// The recipe for the chosen variant, or null (with the status line set) when it cannot be fetched.
 async function recipe() {
   const v = variant();
-  if (!recipes[v]) recipes[v] = await (await fetch(`recipes/${v}.json`, { cache: 'no-cache' })).json();
+  try {
+    if (!recipes[v]) recipes[v] = await (await fetch(`recipes/${v}.json`, { cache: 'no-cache' })).json();
+  } catch (e) {
+    $('status').textContent = LOAD_FAIL;
+    return null;
+  }
   return recipes[v];
 }
 async function loadIndex() {
   index = await (await fetch('recipes/index.json', { cache: 'no-cache' })).json();
   const r = await recipe();
+  if (!r) throw new Error(LOAD_FAIL);
   $('footHash').textContent = short(r.payload_sha256);
   chooserState();
 }
@@ -54,6 +64,7 @@ async function handle(file) {
   $('status').textContent = 'Making the file…';
   show(null); made = null; layout();
   const r = await recipe();
+  if (!r) return;
   let input;
   try { input = await stockFrom(file, r); } catch (e) {
     $('wrongDetail').textContent = `${file.name}: ${e.message}`; show('wrong'); $('status').textContent = ''; return;
@@ -92,7 +103,7 @@ function chooserState() {
 $('accept').addEventListener('change', () => { chooserState(); setStep(made ? 3 : $('accept').checked ? 2 : 1); });
 for (const el of document.querySelectorAll('input[name="variant"]')) el.addEventListener('change', async () => {
   made = null; show(null); layout(); $('status').textContent = '';
-  const r = await recipe(); $('footHash').textContent = short(r.payload_sha256);
+  const r = await recipe(); if (r) $('footHash').textContent = short(r.payload_sha256);
 });
 $('choose').addEventListener('click', () => $('file').click());
 $('file').addEventListener('change', (e) => { if (e.target.files[0]) handle(e.target.files[0]); e.target.value = ''; });
@@ -121,9 +132,11 @@ async function step(n, fn) {
   const b = $('b' + n); b.disabled = true;
   try { await fn(); } catch (e) { task(n, failText(e), 'err'); b.disabled = false; }
 }
+// Rebuild the port list, keeping the port the user chose if it is still there.
 function fillPorts() {
-  const sel = $('port'); sel.innerHTML = '';
+  const sel = $('port'); const chosen = sel.value; sel.innerHTML = '';
   for (const o of flasher.outputs()) { const opt = document.createElement('option'); opt.value = o.id; opt.textContent = o.name; sel.appendChild(opt); }
+  if (chosen && [...sel.options].some((o) => o.value === chosen)) sel.value = chosen;
   return sel.options.length;
 }
 $('b1').addEventListener('click', () => step(1, async () => {
@@ -149,4 +162,4 @@ $('b2').addEventListener('click', () => step(2, async () => {
 }));
 
 layout();
-loadIndex().catch(() => { $('status').textContent = 'This page couldn\'t load the data it needs. Check your internet connection and reload the page.'; });
+loadIndex().catch(() => { $('status').textContent = LOAD_FAIL; });

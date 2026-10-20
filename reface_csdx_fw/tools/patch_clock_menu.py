@@ -271,6 +271,8 @@ def make_midi2_title(midi_rows):
 
 # ------------------------------------------------------------------ main -----
 def patch(img):
+    """Returns (patched image, human-readable report, placements): placements
+    maps each free-ROM item to its link address."""
     d = bytearray(img)
     assert len(d) == 0x1E0000, "unexpected image size"
     stock_lanes, stock_sum = refacefw.sampled_lanes(d), refacefw.byte_sum(d)
@@ -348,10 +350,11 @@ def patch(img):
         k.movs(2, 1); k.cmp(3, 1); k.b("go", "ne")    # flag != 1 (clock on) -> set 1 (off)
         k.movs(2, 0)                                  # flag == 1 (off)      -> set 0 (on)
         k.label("go")
-        k.push([2])                                   # keep the new value across the setter
+        k.push([2, 4])                                # keep the new value across the setter; r4 pads the
+                                                      # push to 8 bytes so SP stays 8-aligned at the call
         k.ldr(0, 0x00000000 | CLOCK_FLAG); k.movs(1, 1)
         k.bl(SET_PARAM)                               # stock path: clamp + post (MIDI tx on change)
-        k.pop([2])
+        k.pop([2, 4])
         # The 0x0B store handler 0x0203A65C only stores addresses <= 0x13, so
         # the posted value for 0x15 is dropped there: store the byte ourselves.
         k.ldr(3, SETTINGS); k.strb(2, 3, CLOCK_FLAG)
@@ -468,12 +471,12 @@ def patch(img):
     PADA = alloc(bytes([(stock_sum - refacefw.byte_sum(d) + 0xFF) & 0xFF]), 1, "byte-sum pad")   # pad replaces a 0xFF byte
     assert refacefw.byte_sum(d) == stock_sum, "byte-sum balance failed"
 
+    placements = {"clock label bitmap": BMPA, "label list": LBLA, "layout": LAYA, "MIDI 2 title": TITLEA,
+                  "key handler": KEYA, "static draw": STAA, "value draw": VALA, "trampoline": TRAMPA,
+                  "record hook": HOOKA, "page 5 record": RECA, "byte-sum pad": PADA}
     report = []
     report.append("free-ROM placements:")
-    for nm, a_ in (("clock label bitmap", BMPA), ("label list", LBLA),
-                   ("layout", LAYA), ("MIDI 2 title", TITLEA), ("key handler", KEYA), ("static draw", STAA),
-                   ("value draw", VALA), ("trampoline", TRAMPA), ("record hook", HOOKA),
-                   ("page 5 record", RECA), ("byte-sum pad", PADA)):
+    for nm, a_ in placements.items():
         report.append("  %-20s %#08x (file %#x)" % (nm, a_, a_ - BASE))
     report.append("in-place patches:")
     report.append("  descriptor count @ %#x: 5 -> 6 (list stays %#x)" % (ROM_DESC, RAM_LIST))
@@ -491,13 +494,13 @@ def patch(img):
     report.append("\nrecord hook:\n" + dis(HOOKA, hcode))
     report.append("\npatched page-apply at 0x02044906:\n" + dis(BASE + REC_HOOK - 4, bytes(d[REC_HOOK-4:REC_HOOK+6])))
     report.append("\npatched BL at 0x020415c8:\n" + dis(BASE + CLOCK_BL, bytes(d[CLOCK_BL:CLOCK_BL+4])))
-    return bytes(d), "\n".join(report)
+    return bytes(d), "\n".join(report), placements
 
 def main(argv):
     if len(argv) < 3:
         print(__doc__); return 2
     img = open(argv[1], "rb").read()
-    out, report = patch(img)
+    out, report, _ = patch(img)
     open(argv[2], "wb").write(out)
     print(report)
     if len(argv) > 3:

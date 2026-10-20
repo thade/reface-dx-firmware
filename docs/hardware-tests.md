@@ -1,4 +1,4 @@
-# Hardware test checklist: reface DX no-clock firmware
+# Hardware test checklist: reface DX clock firmware
 
 Three re-signed copies of Yamaha's updater live under `reface_csdx_fw/updater/`
 (built by `tools/make_updaters.sh`, git-ignored):
@@ -10,7 +10,8 @@ Three re-signed copies of Yamaha's updater live under `reface_csdx_fw/updater/`
 | `updater/clockmenu/reface updater.app` | MIDI 2 page patch (`tools/patch_clock_menu.py`) | the menu switch mod |
 | `updater/orig/.../reface updater.app` | untouched Yamaha app | recovery |
 
-Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `c5ea5147…f709`.
+Payload SHA-256: stock `645309be…2abb`, noclock `af1d2453…4799`, clockmenu `1702d694…5709`
+(the hardware-tested clockmenu payload was `c5ea5147…f709`; see the Record for what changed).
 
 **Result: both phases passed on 2026-10-19. See Record at the bottom.**
 
@@ -53,10 +54,15 @@ Built and emulation-verified (`tools/verify_menu.py` and `tools/verify_ui.py`:
 the real parameter setter, the real UI event path from the FUNCTION button
 to the flash save, and the rendered screen). **Flashed and verified on hardware 2026-10-20, see Record.**  Read menu-internals.md §8 for what the patch changes before
 running it.  The app is `updater/clockmenu/reface updater.app` (payload
-SHA-256 `c5ea5147…f709`).  The 2026-10-20 reviews and emulation found and
+SHA-256 `1702d694…5709`).  The 2026-10-20 reviews and emulation found and
 fixed six problems in earlier builds (clamped setting, clamped page index,
 wrong key id, trailer checksum, dropped store, frozen Voice page layout);
-do not flash any clockmenu payload with a different hash.
+do not flash any clockmenu payload with a hash other than the one pinned
+in `tools/selftest.py`.  The payload flashed on 2026-10-20 was
+`c5ea5147…f709`; the current one differs from it in two halfwords of the
+key handler (the push and pop around the setter call now include r4, so
+the stack stays 8-byte aligned at the call) and has passed the three
+emulation suites but has not been flashed.
 
 Semantics: settings byte 0x15 is a CLOCK-OFF flag.  1 = clock off, anything
 else = clock on.  The firmware's own default-fill writes 0, so the unit
@@ -94,9 +100,9 @@ behaves like stock until you turn the clock off.
    - Leave FUNCTION while on MIDI 2 and re-enter: it should come back on
      MIDI 2 (the page-index parameter now allows 5).
 8. If anything misbehaves, reflash `updater/stock` or `updater/orig` — the
-   patch changes four in-place sites (descriptor, one `bl`, two parameter
-   entry words) plus free ROM, and keeps both trailer checksums equal to
-   stock.
+   patch changes five in-place sites (descriptor, two `bl`, two parameter
+   entry words), rewrites the five title bitmaps, adds free ROM, and keeps
+   both trailer checksums equal to stock.
 
 ## Recovery
 
@@ -142,3 +148,7 @@ Write the outcome of each phase here with the display text and MIDI monitor obse
   After reboot: MIDI 2 shows the "MIDI 2" title, six dots with the sixth filled, CLOCK on one line (user-confirmed).
   SysEx dump: byte 0x15 = 1 and MIDI control = 1 as set before the reflash (the update leaves the settings
   sector alone); 0 x F8 in 8 s, 41 x FE. Phase 3b passes. Display: ON/off cells are the stock switch graphics.
+- Payload `1702d694…5709`, 2026-10-20: built after a review found the key handler called the parameter setter
+  with the stack 4-byte aligned (push {r3,lr} then push {r2}); the push and pop now include r4. Two halfwords
+  differ from `c5ea5147…f709`, trailer lanes and byte-sum still equal stock, verify_menu, verify_ui and
+  verify_paths all pass. Not flashed on hardware yet.

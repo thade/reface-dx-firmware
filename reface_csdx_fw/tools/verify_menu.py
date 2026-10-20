@@ -34,7 +34,7 @@ Checks (see docs/menu-internals.md section 8):
 
 Usage: verify_menu.py [stock_image.bin]      (needs reface_csdx_fw/venv: unicorn, capstone)
 """
-import sys, os, re, struct
+import sys, os, struct
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import patch_clock_menu as pm
@@ -123,12 +123,6 @@ class Emu:
 
 def rect_capture(uc):
     return struct.unpack(">4I", uc.mem_read(uc.reg_read(UC_ARM_REG_R1), 16))
-
-def placements(report):
-    out = {}
-    for m in re.finditer(r"^\s+(.+?)\s+(0x[0-9a-f]+) \(file", report, re.M):
-        out[m.group(1).strip()] = int(m.group(2), 16)
-    return out
 
 # ----------------------------------------------------------------- tests ----
 def check(cond, msg):
@@ -404,8 +398,7 @@ def test_checksums(stock, img, P):
 def main(argv):
     path = argv[1] if len(argv) > 1 else os.path.join(HERE, "..", "out", "reface_csdx_main_v130.bin")
     stock = open(path, "rb").read()
-    img, report = pm.patch(stock)
-    P = placements(report)
+    img, _report, P = pm.patch(stock)
     results = [f(img, P) for f in (test_static_draw, test_label_walk, test_trampoline, test_value_draw, test_key_handler)]
     results.append(test_page_apply(stock, img, P))
     for f in (test_partmode_swap, test_dispatcher, test_cycler, test_real_setter, test_checksums):

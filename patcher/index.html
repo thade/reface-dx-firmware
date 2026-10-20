@@ -219,7 +219,8 @@ CLOCK
       <div id="noMidi" hidden>
         <h2>Send it with Yamaha's updater instead</h2>
         <p class="measure">This browser can't talk to the DX. Open this page in Chrome or Edge on a computer, or download the file and send it yourself:</p>
-        <p style="margin-top: 12px"><a class="button solid" id="download" download="reface updater.dat" href="#">Download the firmware file</a></p>
+        <p class="small" id="downloadWait">Make the file first (step 2). The download appears here.</p>
+        <p id="downloadBox" hidden style="margin-top: 12px"><a class="button solid" id="download" download="reface updater.dat" href="#">Download the firmware file</a></p>
         <p class="small measure" style="margin-top: 8px">It is a Standard MIDI File of 139 SysEx messages, 2,250,052 bytes, in the same format as Yamaha's <code>reface updater.dat</code>. Any SysEx tool that keeps the file's own timing (about 1.4 seconds between messages) can send it to the DX in Update mode. On a Mac you can also put it in a copy of Yamaha's updater app in place of its <code>Contents/Resources/reface updater.dat</code> and re-sign the app with <code>codesign --force --deep --sign - "reface updater.app"</code>.</p>
       </div>
     </div>

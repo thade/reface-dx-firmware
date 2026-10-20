@@ -15,7 +15,7 @@ import refacefw, patch_clock, patch_clock_menu
 EXPECT = {
     "stock payload":     "645309bef54e9444ebdeeacaa42f727b0fd0bdcfc06992ca1adde30a16112abb",
     "noclock payload":   "af1d24539c2f064c192a0d2bc86c06bbfefdcabc1486b5bcefe9379817ce4799",
-    "clockmenu payload": "c5ea5147dfc9d05f2f6242ef436ecf95d7aef9bd0f801be3cbcb21c64b55f709",
+    "clockmenu payload": "1702d69485c1bf490184421b5b8112d9cd9af3a3fe6c6e25a2a779ca59bd5709",
 }
 
 def sha(b): return hashlib.sha256(b).hexdigest()
@@ -34,7 +34,7 @@ def main(argv):
     nc[off:off+4] = patch_clock.NOP2
     got["noclock payload"] = sha(refacefw.repack(bytes(nc)))
     with contextlib.redirect_stdout(io.StringIO()):
-        menu_img, _report = patch_clock_menu.patch(img)
+        menu_img, _report, _placed = patch_clock_menu.patch(img)
     got["clockmenu payload"] = sha(refacefw.repack(menu_img))
     rc = 0
     # trailer checksums (see refacefw.sampled_lanes): the clockmenu image must

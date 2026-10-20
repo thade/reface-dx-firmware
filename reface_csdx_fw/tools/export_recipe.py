@@ -33,11 +33,8 @@ def diff_ops(stock, img, skip):
     return ops
 
 def clock_switch(stock_img):
-    img, report = pm.patch(stock_img)
-    P = {}
-    import re
-    for m in re.finditer(r"^\s+(.+?)\s+(0x[0-9a-f]+) \(file", report, re.M):
-        P[m.group(1).strip()] = int(m.group(2), 16) - pm.BASE
+    img, _report, placed = pm.patch(stock_img)
+    P = {k: v - pm.BASE for k, v in placed.items()}          # file offsets
     titles = [struct.unpack_from(">I", stock_img, pm.TITLE_TABLE - pm.BASE + 0x24 + 4 * i)[0] - pm.BASE for i in range(5)]
     tsize = pm.TITLE_W * pm.TITLE_H // 8
     skip = [(t, t + tsize) for t in titles] + [(P["MIDI 2 title"], P["MIDI 2 title"] + tsize)]

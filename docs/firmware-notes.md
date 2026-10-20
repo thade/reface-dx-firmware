@@ -10,9 +10,11 @@ teardowns and forums and have not been checked on hardware.
 
 ## Summary
 
-- MIDI clock disable: feasible as a firmware patch. The update image is plain,
-  unencrypted big-endian ARM/Thumb code with readable strings. Main open question
-  is whether the bootloader verifies an image-level checksum (see "Unknowns").
+- MIDI clock disable: done, two ways. The update image is plain, unencrypted
+  big-endian ARM/Thumb code with readable strings. The no-clock patch (4
+  bytes) and the MIDI 2 page patch (a menu switch) were both flashed and
+  checked on a DX in October 2026; the bootloader enforces no image-level
+  checksum that either patch trips (see "Unknowns").
 - CP firmware on a DX: not viable. CP/YC and CS/DX are different boards on
   different Yamaha chips (SWX08 vs SSP2), and the CP needs a 64 MB sample ROM
   the DX does not have.
@@ -249,11 +251,12 @@ the rebuilt SMF differs from Yamaha's in 6 bytes (packed data + checksum).
    with the patched `.mid`, and ad-hoc re-sign so macOS will launch it:
    `codesign --force --deep --sign - "reface updater.app"`.
 2. Or send the SysEx messages yourself (e.g. python `mido`/`rtmidi`) with
-   the unit in Update mode, keeping the ~1309-tick (about 0.68 s at the SMF
-   tempo) gap between blocks that the updater uses.
+   the unit in Update mode, keeping the 1309-tick gap between blocks that
+   the updater uses: 1.36 s at the file's 500,000 us per quarter note and
+   480 ppqn (`patcher/flasher.js` uses the same figure).
 
-A later version could gate the `bl` on the existing "MIDI control" system
-flag instead of removing it, giving a user-facing switch.
+The menu switch that replaces this permanent removal is the MIDI 2 page
+patch below.
 
 ## The MIDI 2 page patch (v2): a real menu switch
 
