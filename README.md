@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/reface-dx.svg" alt="Drawing of the Yamaha reface DX" width="560"></p>
+
 # MIDI clock switch firmware for the Yamaha reface DX
 
 Unofficial firmware for the **Yamaha reface DX** that adds a switch to turn
