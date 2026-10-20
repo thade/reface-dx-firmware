@@ -1,4 +1,4 @@
-# Publishes the browser patcher (patcher/) to GitHub Pages.
+# Publishes the browser patcher (patcher/) to GitHub Pages: https://thade.github.io/reface-dx-firmware/
 name: Patcher on GitHub Pages
 on:
   push:
