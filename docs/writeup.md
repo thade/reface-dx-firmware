@@ -1,6 +1,6 @@
 # Yamaha reface DX: what we know so far
 
-Status as of 2026-10-19. Everything below the "Reported" heading is secondhand;
+Status as of 2026-10-20. Everything below the "Reported" heading is secondhand;
 everything above it was checked against the actual files.
 
 ## The question
@@ -68,14 +68,14 @@ at power-on).
 - Data is 7-bit packed: one MSB byte then seven data bytes. Each message
   carries a 5-byte sub-header with the block number and a length field equal
   to raw bytes + groups.
-- Decoded: exactly 2 MB minus erase fill; 1.25 MB of live program.
+- Decoded: a 1,966,080-byte (0x1E0000) image, about 1.25 MB of it live program.
 - Build stamp: `REFACE MAIN 1.30 2016MAR03 144105`.
 - One unified CS/DX binary (both model strings, both engines' source paths).
 - No encryption or compression. Source file paths for about 80 modules are
   compiled in, which made the MIDI code easy to locate.
 - Eight bytes after the build stamp are two checksums: four lane byte-sums
   over sampled offsets of each 512 KB chunk (reproduced exactly, see
-  README), and the image's 8-bit byte-sum. The no-clock patch leaves the
+  [firmware-notes.md](firmware-notes.md#verified-the-update-file)), and the image's 8-bit byte-sum. The no-clock patch leaves the
   sampled lanes intact and the unit accepted its changed byte-sum, so the
   byte-sum is not enforced at boot; whether the lane check is enforced is
   unknown, so the menu patch keeps both equal to stock.
@@ -119,9 +119,10 @@ Start/Continue/Stop, Active Sensing, notes, SysEx and everything else are
 untouched. `tools/patch_clock.py` applies it with context checks and emits
 the patched updater SMF, which differs from Yamaha's in six bytes.
 
-`tools/make_updaters.sh` unpacks Yamaha's updater, produces a `stock` copy
-(payload byte-identical to Yamaha's, re-signed) and a `noclock` copy, pins
-all three payload hashes, and checks for Rosetta since the app is x86_64. The
+`tools/make_updaters.sh` unpacks Yamaha's updater, checks all three payload
+hashes, runs the selftest and the three emulation suites, and produces
+re-signed `stock` (payload byte-identical to Yamaha's), `noclock` and
+`clockmenu` copies. It checks for Rosetta since the app is x86_64. The
 stock copy launches and logs that it loaded the replaced payload.
 
 ## Risks

@@ -19,7 +19,7 @@ shared block.
 |---|---|
 | 0x02020000–0x0204FFFF | Thumb code (this image) |
 | 0x0209xxxx–0x020CFFFF | ROM tables: LCD bitmaps, label lists, page records, parameter-group table |
-| 0x0215C9B8–0x0215E0A0 | ROM master screen block, copied to RAM at boot (see §4) |
+| 0x0215C9B8–0x0215E0A0 | ROM master screen block, copied to RAM at boot (below) |
 | 0x02160000+ (file 0x140000) | 0xFF erase fill — free space used by our patch |
 | 0x04010000–0x040116E8 | shared RAM: mailbox at +0, screen records/lists at +0x1020 |
 | 0x041480A0 | **system settings block, 32 bytes** (§2) |
@@ -30,7 +30,7 @@ shared block.
 The boot copy is driven by a descriptor table in the reset area at file
 0x6D8: `{fn 0x020216AD, src 0x0215C9B8, dst 0x04010000, end 0x040116E8}` —
 5,864 bytes copied verbatim, so within that block **RAM address = ROM
-address − 0x1084**.  The mailbox at 0x04010000 (`write 0xFF, wait for it to
+address − 0x0215C9B8 + 0x04010000** (file offset − 0x13C9B8 + 0x04010000).  The mailbox at 0x04010000 (`write 0xFF, wait for it to
 change`) talks to the panel-scan Cortex-M3 (`sys_scanmicom.c`).
 
 ## 2. Settings and the parameter system
@@ -168,18 +168,17 @@ and are **silently dropped**.
 
 Emulated with the real loop (`ui_sim.UISim(receiver="real")`,
 `verify_ui.test_receiver`): stock MIDI page key 0x14 posts `00 00 0E 01`
-and the live byte 0x0E becomes 1; the patched page-5 key 0x12 posts
-`00 00 15 01`, the handler returns, and **byte 0x15 stays 0**.  The earlier
-`verify_ui` toggle/persistence results relied on `ui_sim` applying the
-store by hand (now `receiver="manual"`, kept for the UI-side checks).
-Consequence for the current clockmenu build: the CLOCK toggle has no
-effect on hardware (value stays ON, F8 keeps running, nothing becomes
-dirty, so no flash write).  The 0x0080 (UI) group is the exception: when
-hook [1] returns 1 the setter stores it synchronously via 0x0204359C at
-0x020455C8.  A fix therefore has to make the page-5 key handler store
-0x15 itself (it now does, with a direct `strb` after the setter call,
-which still posts the message for the SysEx-out side effect) — the table
-bound is a `cmp` immediate and cannot be extended in place.
+and the live byte 0x0E becomes 1.  The patched page-5 key 0x12 posts
+`00 00 15 01`, which the handler drops, so the key handler stores 0x15
+itself with a direct `strb` after the setter call; the setter call stays
+for the message it posts.  The table bound is a `cmp` immediate and
+cannot be extended in place.  An earlier build without that `strb` left
+the toggle with no effect, because the store never happened; the
+`verify_ui` toggle and persistence checks had missed it, because
+`ui_sim` applied the store by hand (now `receiver="manual"`, kept for
+the UI-side checks).  The 0x0080 (UI) group is the exception to the
+message path: when hook [1] returns 1 the setter stores it synchronously
+via 0x0204359C at 0x020455C8.
 
 The same per-address pattern governs SysEx *reception* (DX handler
 0x0203A810, reached from the parser for messages `F0 43 cmd 7F 1C 05 …`):
@@ -233,7 +232,7 @@ Group descriptor (8 bytes), ROM 0x13DA3C → RAM 0x04011084:
 ```
 
 The records land at RAM 0x04011020..0x04011083 through the boot copy
-(ROM − 0x1084).  **The firmware mutates the RAM records at runtime**:
+(§1).  **The firmware mutates the RAM records at runtime**:
 0x0204636C (FUNCTION-enter bookkeeping) rewrites record 0's layout pointer
 at the hardcoded RAM address 0x04011024 (literal 0x04011020, `str r2,[r3,#4]`)
 to 0x020C4098 when `[0x041480C4+0xD]` is 0, else 0x020C40D8 (= 0x020C4098 +
@@ -399,7 +398,7 @@ which is why our one-column page leaves columns 1–3 blank.
 
 | helper | args | what it draws |
 |---|---|---|
-| 0x0203C86C | (x, y, page) | page title icon 32×32: table base 0x020A494C, bitmap = [base+0x24+4·page]; titles 0–4 in use (2 = MIDI page icon) |
+| 0x0203C86C | (x, y, page) | page title bar 128×12: table base 0x020A494C, bitmap = [base+0x24+4·page]; titles 0–4 in use (2 = MIDI page icon) |
 | 0x0203C254 | (list) | label list: 16-byte records `{s16 x, y, w, h; be32 zero; be32 bmp}` (bitmap read from +0xC); terminator = record with byte[8]==0xFF |
 | 0x0203C434 | (x, y, v) | on/off switch 32×32 at y=0x26: v==0 → "OFF" (0x020B08A8), v≠0 → "ON" (0x020B0840) |
 | 0x0203C8E4 | (x, y, byte) | numeric value box (channel digits) |
@@ -445,8 +444,9 @@ preserved until the user toggles, and no normalisation is needed.
 
 New code/data in free ROM from 0x02160004 (file 0x140004; 0x140000..3 is a
 sampled checksum offset and is left alone), placed in order: CLOCK label
-bitmap (32×52 1bpp, "CLOC"/"K" in the stock font style with the left rule),
-label list, layout (row `{0,0,0x15,·,4}` + three 0x83 rows), key handler,
+bitmap (32×52 1bpp, "CLOCK" on one line in the stock font style with the
+left rule), label list, layout (row `{0,0,0x15,·,4}` + three 0x83 rows),
+the "MIDI 2" title bitmap (128×12), key handler,
 static draw (our "MIDI 2" title bitmap + our label list), value draw (ON
 unless the flag is 1), clock trampoline, the page-apply record hook, our page-5
 record (20 bytes), and one byte-sum pad.  The stock five-record list stays
@@ -454,7 +454,7 @@ in RAM so the Part Mode layout swap (§3.1) keeps working.  All functions are as
 big-endian Thumb-1 assembler in the script (push/pop, movs, ldr-literal,
 ldrb, cmp, b±cond, bl, bx) and verified by disassembly.
 
-In-place patches (5 sites):
+In-place patches (5 sites, plus the title bitmaps in the last row):
 
 | file offset | stock | patched | effect |
 |---|---|---|---|
@@ -500,8 +500,9 @@ stock image, checks their pinned SHA-256 and both trailer checksums (stdlib
 only).  `verify_menu.py` emulates the patched image with stock routines as
 control cases:
 
-* static draw: title draw called with (0, 0, MIDI icon), label draw with our
-  list; control = stock MIDI page static draw 0x02047D68
+* static draw: blits our "MIDI 2" title bitmap at (0, 0), 128×12, and calls
+  the label draw with our list; control = stock MIDI page static draw
+  0x02047D68, which calls the title draw with (0, 0, 2)
 * label list: walked by the real 0x0203C254 — exactly one blit, bitmap ==
   the CLOCK bitmap, rect x=0 y=0x0C 32×52, then the terminator stops it;
   control = the stock MIDI list (3 blits, known bitmaps).  Negative control:
@@ -532,7 +533,8 @@ control cases:
 * key handler event 3 also stores the byte directly (checked after the
   stubbed setter returns); ignored events leave it untouched
 * page cycler 0x02044960: stock 4 → 0; patched 4 → 5 (our record) → 0
-* boot copy: patched descriptor lands at RAM 0x04011084 as {6, new list}
+* boot copy: patched descriptor lands at RAM 0x04011084 as {6, stock RAM
+  list 0x04011020}
 * checksums: sampled lanes and byte-sum equal stock; 0x140000..3 untouched
 
 `verify_ui.py` (with `ui_sim.py` and the LCD model `lcd.py`) drives the
@@ -559,10 +561,10 @@ stubbed and everything else running as compiled:
   post runs for real and the ring is drained through the MIDI task's own
   pop/dispatch code after every event.  Control: stock MIDI page key 0x14 →
   byte 0x0E = 1 through 0x02036C84 → 0x0203A65C → 0x02039C64 →
-  0x020397D4.  **Patched page 5 key 0x12: the message `00 00 15 01` is
-  dispatched and dropped; byte 0x15 stays 0 (FAIL, reported — §2.3).**  The
-  toggle/persistence/screen checks above run with `receiver="manual"` and
-  only cover the UI side.
+  0x020397D4.  Patched page 5 key 0x12: the message `00 00 15 01` is
+  dispatched and dropped by the stock handler, and the key handler's own
+  `strb` leaves byte 0x15 = 1 (§2.3).  The toggle/persistence/screen checks
+  above run with `receiver="manual"` and cover the UI side.
 
 `verify_paths.py` (same harness) covers the two non-UI paths to byte 0x15,
 stock image as control:
@@ -582,12 +584,12 @@ stock image as control:
 * SysEx (through the type-3 ring message and the real parser): control
   parameter change `F0 43 10 7F 1C 05 00 00 0E 01 F7` stores 0x0E on both
   images; parameter change for 0x15 with values 0/1/2 never faults, never
-  hangs and **stores nothing on either image** (FAIL against the "patched
-  stores the clamped value" expectation — the receive table stops at 0x13);
+  hangs and stores nothing on either image, as designed (the receive table
+  stops at 0x13, so a host cannot set the flag over SysEx);
   system dump request → 45-byte bulk dump `F0 43 00 7F 1C 00 24 05 00 00 00
   …` equal to the live block with a valid checksum, byte 0x15 included;
-  system bulk block stores 0x0A/0x0E (control) but **skips 0x15 (FAIL, same
-  cause)**; the `11 00 00` block commits the live block to flash once with
+  system bulk block stores 0x0A/0x0E (control) and skips 0x15 on both
+  images, as designed (same cause); the `11 00 00` block commits the live block to flash once with
   the NV shadow carrying 0x15; no assert/fatal logger (0x02020750) call in
   any sequence.
 
@@ -664,7 +666,8 @@ sector after this image):
   its default, 0x02042944 stores 0x11/0x12 when `[0x04091984+6]` = 1,
   0x02042974 stores 0x13, then 0x02042B9C and the dirty checks
   0x020444CC(5)/(4) decide whether to write.  None of them touches 0x15.
-* Emulated end to end: `verify_ui.py` (manual store) — toggle on page 5,
+* Emulated end to end: `verify_ui.py` (store applied by the harness; the
+  real store path is the receiver check in §8) — toggle on page 5,
   leave FUNCTION → NV shadow byte 0x15 = 1 and exactly one flash write;
   stock leave without change → no write; re-enter → page 5.
   `verify_paths.py` — the boot path above with a real NV image at

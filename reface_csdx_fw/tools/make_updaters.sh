@@ -6,6 +6,7 @@
 # All are ad-hoc re-signed and de-quarantined so macOS will launch them.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+mkdir -p out
 
 ZIP=updater/reface_updater_CSDX_v130-3_mac.zip
 EXPECT_ZIP=291e5836af25d39e536ec2fd3d8cf82905edfce6d0d86692023656d9697889c2
@@ -41,7 +42,7 @@ if [ -x venv/bin/python ]; then
   venv/bin/python -I tools/verify_menu.py out/reface_csdx_main_v130.bin >/dev/null || { echo "verify_menu.py failed"; exit 1; }
   venv/bin/python -I tools/verify_ui.py   out/reface_csdx_main_v130.bin >/dev/null || { echo "verify_ui.py failed"; exit 1; }
   venv/bin/python -I tools/verify_paths.py out/reface_csdx_main_v130.bin >/dev/null || { echo "verify_paths.py failed"; exit 1; }
-else echo "note: reface_csdx_fw/venv missing, skipping verify_menu.py (python3 -m venv venv && venv/bin/pip install unicorn capstone)"; fi
+else echo "note: reface_csdx_fw/venv missing, skipping verify_menu.py, verify_ui.py and verify_paths.py (python3 -m venv venv && venv/bin/pip install unicorn capstone)"; fi
 
 # 2. make the app copies
 for variant in stock noclock clockmenu; do

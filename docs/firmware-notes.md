@@ -52,24 +52,29 @@ docs/references.md                 where to get Yamaha's manuals and updater gui
 Hardware test procedure: see [hardware-tests.md](hardware-tests.md). Narrative summary of findings: [writeup.md](writeup.md). FUNCTION menu / parameter system / LCD reverse-engineering notes: [menu-internals.md](menu-internals.md).
 
 Python deps: the extract/patch/selftest tools need only the standard library.
-`find_realtime.py` needs capstone and `verify_menu.py` needs unicorn (and uses
-capstone when present): `cd reface_csdx_fw && python3 -m venv venv &&
+`find_realtime.py` needs capstone, and `verify_menu.py`, `verify_ui.py` and
+`verify_paths.py` need unicorn (and use capstone when present): `cd reface_csdx_fw && python3 -m venv venv &&
 venv/bin/pip install capstone unicorn`.
 
 `out/` and `updater/` are git-ignored: the files are Yamaha's copyrighted firmware and are
 reproducible from the official download. Regenerate with:
 
 ```bash
-python3 tools/refacefw.py roundtrip "reface updater.dat"      # must print ROUNDTRIP OK
-python3 tools/refacefw.py extract "reface updater.dat" out/reface_csdx_main_v130.bin
-python3 tools/patch_clock.py out/reface_csdx_main_v130.bin out/reface_csdx_main_v130_noclock.bin out/reface_updater_CSDX_v130_noclock.mid
-python3 tools/patch_clock_menu.py out/reface_csdx_main_v130.bin out/reface_csdx_main_v130_clockmenu.bin out/reface_updater_CSDX_v130_clockmenu.mid
-python3 tools/selftest.py                                       # all three payload hashes must print OK
-venv/bin/python tools/verify_menu.py                            # emulated behaviour checks, must print ALL OK
-venv/bin/python tools/verify_ui.py                              # whole-UI emulation incl. persistence and screen, ALL OK
+cd reface_csdx_fw
+mkdir -p out updater/orig
+unzip -q updater/reface_updater_CSDX_v130-3_mac.zip -d updater/orig
+DAT="updater/orig/reface_updater_CSDX_v130-3_mac/reface updater.app/Contents/Resources/reface updater.dat"
+python3 -I tools/refacefw.py roundtrip "$DAT"                  # must print ROUNDTRIP OK
+python3 -I tools/refacefw.py extract "$DAT" out/reface_csdx_main_v130.bin
+python3 -I tools/patch_clock.py out/reface_csdx_main_v130.bin out/reface_csdx_main_v130_noclock.bin out/reface_updater_CSDX_v130_noclock.mid
+python3 -I tools/patch_clock_menu.py out/reface_csdx_main_v130.bin out/reface_csdx_main_v130_clockmenu.bin out/reface_updater_CSDX_v130_clockmenu.mid
+python3 -I tools/selftest.py                                    # all three payload hashes must print OK
+venv/bin/python -I tools/verify_menu.py out/reface_csdx_main_v130.bin    # emulated behaviour checks, ALL OK
+venv/bin/python -I tools/verify_ui.py out/reface_csdx_main_v130.bin      # whole-UI emulation incl. persistence and screen, ALL OK
+venv/bin/python -I tools/verify_paths.py out/reface_csdx_main_v130.bin   # boot NV load and SysEx paths, ALL OK
 ```
 
-`tools/make_updaters.sh` runs both checks before building the apps.
+`tools/make_updaters.sh` runs the same steps and checks before building the apps.
 
 ## Verified: the update file
 
