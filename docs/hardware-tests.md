@@ -89,8 +89,8 @@ behaves like stock until you turn the clock off.
 6. Set CLOCK off, then **leave FUNCTION** (press any other panel button,
    e.g. one of the voice-edit buttons) — that is when the settings block is
    written to flash (menu-internals.md §9).  Power-cycle, re-enter FUNCTION: the
-   CLOCK setting and the clock behaviour should persist, and FUNCTION should
-   come back on the page you left.  Switching off while still on the
+   CLOCK setting and the clock behaviour should persist.  After a power-cycle
+   FUNCTION opens on Voice, because the page index is not saved.  Switching off while still on the
    FUNCTION screen loses the change, exactly as for any stock setting.
 7. Regression pass: the other five pages draw and work as before; voice
    edits, Looper Start/Stop, notes all normal.
@@ -162,3 +162,14 @@ Write the outcome of each phase here with the display text and MIDI monitor obse
 - No-clock payload `af1d2453…4799` (unchanged since Phase 2), reflashed 2026-10-20 after the clockmenu tests.
   10 s USB listen with timing and Active Sensing unfiltered: 0 x F8, 51 x FE (196 ms), no other traffic.
   Looper Start/Stop, notes and DIN were not re-checked.
+- Restore over the no-clock payload `af1d2453…4799`, 2026-10-20: Yamaha's unmodified `reface updater.dat`
+  (`645309be…2abb`) sent with a Python rtmidi sender on the file's own timing (139 messages, 189.6 s), not
+  Yamaha's app. The DX showed "Completed. 1.30 --> 1.30 Reboot." After a normal power-on the first 10 s USB
+  listen showed 0 x F8 because an external clock was driving the DX (Looper tempo showed EXT). With that clock
+  stopped: 480 x F8 in 10 s (120.0 BPM), 51 x FE. Yamaha's firmware is back.
+- Clock switch payload `1702d694…5709` installed with the patcher page's Send, 2026-10-20. Before the next
+  test: 0 x F8 in 8 s, 41 x FE, byte 0x15 = 1 (CLOCK off, kept from earlier).
+- Restore with Yamaha's app over `1702d694…5709`, 2026-10-20: the untouched Yamaha-signed `reface updater.app`
+  from the v1.30 zip, port "reface DX", Start. Transfer 3:08, DX showed "Completed. 1.30 --> 1.30 Reboot."
+  The app was left open until then. After a normal power-on with no external clock: 481 x F8 in 10 s
+  (120.3 BPM), 51 x FE. Yamaha's updater puts Yamaha's firmware back over this project's firmware.
